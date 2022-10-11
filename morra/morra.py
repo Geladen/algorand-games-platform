@@ -9,16 +9,19 @@ from algosdk.v2client.algod import AlgodClient
 import algosdk
 # A player creates the contract and decides the stake
 # A second player joins the match sending the stake
+berluscoin = 115738031
 
 INIT = Int(0)
-WAIT = Int(1)
-COMMIT = Int(2)
-REVEAL = Int(3)
-FINISH = Int(4)
+POOR = Int(1)
+WAIT = Int(2)
+COMMIT = Int(3)
+REVEAL = Int(4)
+FINISH = Int(5)
 
 # COMMIT_DURATION = Int(15)
 # REVEAL_DURATION = Int(15)
 WINNING_SCORE = Int(2)
+ASSET_ID = Int(berluscoin)
 
 class SaMurra(Application):
     stake: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
@@ -40,31 +43,53 @@ class SaMurra(Application):
             self.action_count.set(Int(0)),
         )
         
-    @internal
-    def define_stake(self, txn: abi.PaymentTransaction):
+    @external
+    def init(self, txn: abi.PaymentTransaction, asset: abi.Asset):
         return Seq(
             Assert(
                 Txn.sender() == Global.creator_address(),
-                
                 self.state.get() == INIT,
-                txn.get().receiver() == Global.current_application_address(),
+                txn.get().amount() == Int(210000),
+            ),
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.asset_receiver: Global.current_application_address(),
+                TxnField.xfer_asset: ASSET_ID,
+                TxnField.asset_amount: Int(0),
+            }),
+            InnerTxnBuilder.Submit(),
+            
+            self.state.set(POOR),
+        )
+        
+    @internal
+    def define_stake(self, txn: abi.AssetTransferTransaction):
+        return Seq(
+            Assert(
+                Txn.sender() == Global.creator_address(),
+                self.state.get() == POOR,
+                
+                txn.get().xfer_asset() == ASSET_ID,
+                txn.get().asset_receiver() == Global.current_application_address(),
             ),
             
-            self.stake.set(txn.get().amount()),
+            self.stake.set(txn.get().asset_amount()),
 
             self.state.set(WAIT),
         )        
         
     @internal
-    def join(self, txn: abi.PaymentTransaction):
+    def join(self, txn: abi.AssetTransferTransaction):
         return Seq(
             Assert(
                 self.state.get() == WAIT,
                 
                 txn.get().sender() != Global.creator_address(),
                 
-                txn.get().receiver() == Global.current_application_address(),
-                txn.get().amount() == self.stake.get(),
+                txn.get().xfer_asset() == ASSET_ID,
+                txn.get().asset_receiver() == Global.current_application_address(),
+                txn.get().asset_amount() == self.stake.get(),
             ),
             
             self.challenger.set(Txn.sender()),  
@@ -82,6 +107,11 @@ class SaMurra(Application):
             ),
             
             InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.asset_close_to: Txn.sender(),
+            }),
+            InnerTxnBuilder.Next(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.Payment,
                 TxnField.close_remainder_to: Txn.sender(),
@@ -156,33 +186,33 @@ class SaMurra(Application):
     @internal
     def finish(self):
         return Seq(
-            If(self.player_score.get() >= WINNING_SCORE).Then(
-                InnerTxnBuilder.Begin(),
-                InnerTxnBuilder.SetFields({
-                    TxnField.type_enum: TxnType.Payment,
-                    TxnField.close_remainder_to: Txn.sender(),
-                }),
-                InnerTxnBuilder.Submit(),
-            ).Else(
-                InnerTxnBuilder.Begin(),
-                InnerTxnBuilder.SetFields({
-                    TxnField.type_enum: TxnType.Payment,
-                    TxnField.close_remainder_to: self.challenger.get(),
-                }),
-                InnerTxnBuilder.Submit(),
-            )
+            Assert(
+               self.player_score.get() >= WINNING_SCORE,
+            ),
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.xfer_asset: ASSET_ID,
+                TxnField.asset_close_to: Txn.sender(),
+            }),
+            InnerTxnBuilder.Next(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.Payment,
+                TxnField.close_remainder_to: Global.creator_address(),
+            }),
+            InnerTxnBuilder.Submit(),
         )
         
     @opt_in
-    def opt_in(self, txn: abi.PaymentTransaction):
-        return If(self.state.get() == INIT).Then(
+    def opt_in(self, txn: abi.AssetTransferTransaction):
+        return If(self.state.get() == POOR).Then(
                 self.define_stake(txn)
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.join(txn)
             )
     
     @delete
-    def delete(self):
+    def delete(self, asset: abi.Asset):
         return If(self.state.get() == FINISH).Then(
                 self.finish()
             ).ElseIf(self.state.get() == WAIT).Then(
@@ -193,6 +223,10 @@ if __name__ == "__main__":
     client = AlgodClient('', 'https://node.testnet.algoexplorerapi.io')
     sp = client.suggested_params()
     
+    skb = "UK0dU93ANF1kTXNM0GBDIbmDfn8+U5lLqiRwycoTUn0ZJ6xDdkEf+OE+mr8HqeaGHsAgs5jwwhOSDPAM/GfaJg=="
+    pkb = algosdk.account.address_from_private_key(skb)
+    accb = AccountTransactionSigner(skb)
+    
     sk1 = "oQKvXVRWZyavpsOUiz0P+uBDBSu6Wr286xU2Zq00k3y2yh150dl7ggN0+iVATCrkLjlblu6QA9yd85Sbeu//0g=="
     pk1 = algosdk.account.address_from_private_key(sk1)
     acc1 = AccountTransactionSigner(sk1)
@@ -201,6 +235,33 @@ if __name__ == "__main__":
     pk2 = algosdk.account.address_from_private_key(sk2)
     acc2 = AccountTransactionSigner(sk2)
     
+    if False:
+        berluscoin = algosdk.future.transaction.wait_for_confirmation(client, client.send_transaction(algosdk.future.transaction.AssetCreateTxn(
+            sender=pkb,
+            sp=sp,
+            total=10**16,
+            decimals=0,
+            default_frozen=False,
+        ).sign(skb)), 4)['asset-index']
+        
+        for (pk, sk) in [(pk1, sk1), (pk2, sk2)]:
+            res = algosdk.future.transaction.wait_for_confirmation(client, client.send_transaction(algosdk.future.transaction.AssetTransferTxn(
+                sender=pk,
+                receiver=pk,
+                amt=0,
+                sp=sp,
+                index=berluscoin,
+            ).sign(sk)), 4)
+            print(res)
+            res = algosdk.future.transaction.wait_for_confirmation(client, client.send_transaction(algosdk.future.transaction.AssetTransferTxn(
+                sender=pkb,
+                receiver=pk,
+                amt=100,
+                sp=sp,
+                index=berluscoin,
+            ).sign(skb)), 4)
+            print(res)
+    
     appclient1 = ApplicationClient(client=client, app=SaMurra(), signer=acc1)
     
     # CREATE
@@ -208,12 +269,15 @@ if __name__ == "__main__":
     print(app_id)
     print(tx_id)
     
+    res = appclient1.call(SaMurra.init, pk1, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(pk1, sp, app_acc, 210000), signer=acc1), asset=berluscoin)
+    print(res.tx_id)
+    
     appclient2 = ApplicationClient(client=client, app=SaMurra(), signer=acc2, app_id=app_id)
     
     # JOIN 
-    res = appclient1.opt_in(pk1, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(pk1, sp, app_acc, 100000), signer=acc1))
+    res = appclient1.opt_in(pk1, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(pk1, sp, app_acc, 2, berluscoin), signer=acc1))
     print(res)
-    res = appclient2.opt_in(pk2, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(pk2, sp, app_acc, 100000), signer=acc2))
+    res = appclient2.opt_in(pk2, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(pk2, sp, app_acc, 2, berluscoin), signer=acc2))
     print(res)
     
     # COMMIT
@@ -241,7 +305,7 @@ if __name__ == "__main__":
     print(res.tx_id)
     
     # FINISH
-    res = appclient1.delete(pk1)
+    res = appclient1.delete(pk1, asset=berluscoin)
     print(res)
     
     # STATE
