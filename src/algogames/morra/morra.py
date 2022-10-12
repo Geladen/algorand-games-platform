@@ -15,6 +15,7 @@ FINISH = Int(5)
 # COMMIT_DURATION = Int(15)
 # REVEAL_DURATION = Int(15)
 WINNING_SCORE = Int(2)
+TIMEOUT = Int(10)
 
 class SaMurra(Application):
     stake: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
@@ -22,11 +23,13 @@ class SaMurra(Application):
     asset: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     
     state: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
-    start_round: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     action_count: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     
+    action_timer: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
+
     winner: Final[ApplicationStateValue] = ApplicationStateValue(TealType.bytes) 
 
+    player_state: Final[AccountStateValue] = AccountStateValue(TealType.uint64) 
     player_commit: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     player_guess: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     player_hand: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
@@ -90,9 +93,8 @@ class SaMurra(Application):
             ),
             
             self.challenger.set(Txn.sender()),  
-            self.start_round.set(Global.round()),
-            
-            self.state.set(COMMIT),          
+            self.action_timer.set(Global.round()), 
+            self.state.set(COMMIT)   
         )
 
     @internal
@@ -102,35 +104,26 @@ class SaMurra(Application):
                 Txn.sender() == Global.creator_address(),
                 self.state.get() == WAIT,
             ),
-            
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_close_to: Global.creator_address(),
-            }),
-            InnerTxnBuilder.Next(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.Payment,
-                TxnField.close_remainder_to: Global.creator_address(),
-            }),
-            InnerTxnBuilder.Submit(),
+            self.empty_account(Global.creator_address())
         )
 
     @external
     def commit(self, commit: abi.DynamicBytes):
         return Seq(
             Assert(
+                self.player_state.get() != COMMIT,
                 App.optedIn(Txn.sender(), Global.current_application_id()),
                 self.state.get() == COMMIT,
             ),
             
             self.player_commit.set(commit.get()),
-            
+            self.player_state.set(COMMIT),
+
             If(self.action_count.get() == Int(1)).Then(Seq(
                 self.state.set(REVEAL),
                 self.action_count.set(Int(0)),
-            )).Else(
+                self.action_timer.set(Global.round())
+            )).Else( 
                 self.action_count.set(Int(1)),            
             )
         )
@@ -143,11 +136,13 @@ class SaMurra(Application):
             Assert(
                 App.optedIn(Txn.sender(), Global.current_application_id()),
                 self.state.get() == REVEAL,
+                self.player_state != REVEAL,
                 self.player_commit.get() == Sha256(reveal.get()),
                 If(Txn.sender() == Global.creator_address()).Then(other.address() == self.challenger.get()).Else(other.address() == Global.creator_address())
             ),
             
             self.player_guess.set(JsonRef.as_uint64(reveal.get(), Bytes("guess"))),
+            self.player_state.set(REVEAL),
             Assert(
                 self.player_guess.get() >= Int(0),
                 self.player_guess.get() <= Int(10),
@@ -178,7 +173,8 @@ class SaMurra(Application):
                     self.state.set(FINISH),
                     self.winner.set(other.address()),
                 )).Else(
-                    self.state.set(COMMIT)
+                    self.state.set(COMMIT),
+                    self.action_timer.set(Global.round())
                 )
             )).Else(
                 self.action_count.set(Int(1)),            
@@ -189,13 +185,35 @@ class SaMurra(Application):
     def finish(self):
         return Seq(
             Assert(
-               self.player_score.get() >= WINNING_SCORE,
+                self.player_score.get() >= WINNING_SCORE
             ),
+            self.empty_account(Txn.sender())
+        )
+
+    @internal
+    def forfeit(self):
+        return Seq(
+            Assert(Or(
+                And(
+                    self.state.get() == COMMIT,
+                    self.action_timer.get() + TIMEOUT > Global.round(),
+                    self.player_state.get() == COMMIT),
+                And(
+                    self.state.get() == REVEAL,
+                    self.action_timer.get() + TIMEOUT > Global.round(),
+                    self.player_state.get() == REVEAL)
+            )),
+            self.empty_account(Txn.sender())
+        )
+        
+    @internal
+    def empty_account(self, to: abi.String):
+        return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
                 TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_close_to: Txn.sender(),
+                TxnField.asset_close_to: to.get(),
             }),
             InnerTxnBuilder.Next(),
             InnerTxnBuilder.SetFields({
@@ -204,6 +222,7 @@ class SaMurra(Application):
             }),
             InnerTxnBuilder.Submit(),
         )
+
         
     @opt_in
     def opt_in(self, txn: abi.AssetTransferTransaction):
@@ -219,6 +238,8 @@ class SaMurra(Application):
     def delete(self, asset: abi.Asset):
         return If(self.state.get() == FINISH).Then(
                 self.finish()
+            ).ElseIf(self.state.get() == COMMIT or self.state.get() == REVEAL).Then(
+                self.forfeit()
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.cancel()
             ).Else(
