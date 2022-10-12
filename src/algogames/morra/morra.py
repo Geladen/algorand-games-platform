@@ -1,11 +1,9 @@
 from typing import Final
 from pyteal import *
 from beaker import *
-
+from algorand import client
 # A player creates the contract and decides the stake
 # A second player joins the match sending the stake
-
-berluscoin = 115738031
 
 INIT = Int(0)
 POOR = Int(1)
@@ -17,26 +15,29 @@ FINISH = Int(5)
 # COMMIT_DURATION = Int(15)
 # REVEAL_DURATION = Int(15)
 WINNING_SCORE = Int(2)
-ASSET_ID = Int(berluscoin)
 
 class SaMurra(Application):
     stake: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     challenger: Final[ApplicationStateValue] = ApplicationStateValue(TealType.bytes)
+    asset: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     
     state: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     start_round: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     action_count: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     
+    winner: Final[ApplicationStateValue] = ApplicationStateValue(TealType.bytes) 
+
     player_commit: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     player_guess: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     player_hand: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     player_score: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     
     @create
-    def create(self):
+    def create(self, asset: abi.Asset):
         return Seq(
             self.state.set(INIT),
             self.action_count.set(Int(0)),
+            self.asset.set(asset.asset_id())
         )
         
     @external
@@ -51,7 +52,7 @@ class SaMurra(Application):
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
                 TxnField.asset_receiver: Global.current_application_address(),
-                TxnField.xfer_asset: ASSET_ID,
+                TxnField.xfer_asset: self.asset.get(),
                 TxnField.asset_amount: Int(0),
             }),
             InnerTxnBuilder.Submit(),
@@ -66,7 +67,7 @@ class SaMurra(Application):
                 Txn.sender() == Global.creator_address(),
                 self.state.get() == POOR,
                 
-                txn.get().xfer_asset() == ASSET_ID,
+                txn.get().xfer_asset() == self.asset.get(),
                 txn.get().asset_receiver() == Global.current_application_address(),
             ),
             
@@ -83,7 +84,7 @@ class SaMurra(Application):
                 
                 txn.get().sender() != Global.creator_address(),
                 
-                txn.get().xfer_asset() == ASSET_ID,
+                txn.get().xfer_asset() == self.asset.get(),
                 txn.get().asset_receiver() == Global.current_application_address(),
                 txn.get().asset_amount() == self.stake.get(),
             ),
@@ -105,12 +106,13 @@ class SaMurra(Application):
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.asset_close_to: Txn.sender(),
+                TxnField.xfer_asset: self.asset.get(),
+                TxnField.asset_close_to: Global.creator_address(),
             }),
             InnerTxnBuilder.Next(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.Payment,
-                TxnField.close_remainder_to: Txn.sender(),
+                TxnField.close_remainder_to: Global.creator_address(),
             }),
             InnerTxnBuilder.Submit(),
         )
@@ -169,9 +171,13 @@ class SaMurra(Application):
                     self.player_score[other.address()].set(self.player_score[other.address()].get() + Int(1))
                 ),
                 
-                If(Or(self.player_score.get() >= WINNING_SCORE, self.player_score[other.address()].get() >= WINNING_SCORE)).Then(
-                    self.state.set(FINISH)
-                ).Else(
+                If(self.player_score.get() >= WINNING_SCORE).Then(Seq(
+                    self.state.set(FINISH),
+                    self.winner.set(Txn.sender()),
+                )).ElseIf(self.player_score[other.address()].get() >= WINNING_SCORE).Then(Seq(
+                    self.state.set(FINISH),
+                    self.winner.set(other.address()),
+                )).Else(
                     self.state.set(COMMIT)
                 )
             )).Else(
@@ -188,7 +194,7 @@ class SaMurra(Application):
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: ASSET_ID,
+                TxnField.xfer_asset: self.asset.get(),
                 TxnField.asset_close_to: Txn.sender(),
             }),
             InnerTxnBuilder.Next(),
@@ -205,6 +211,8 @@ class SaMurra(Application):
                 self.define_stake(txn)
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.join(txn)
+            ).Else(
+                Reject()
             )
     
     @delete
@@ -213,5 +221,10 @@ class SaMurra(Application):
                 self.finish()
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.cancel()
+            ).Else(
+                Reject()
             )
         
+from base64 import b64decode
+approval_binary = b64decode(client.compile(SaMurra().approval_program)["result"])
+clear_binary = b64decode(client.compile(SaMurra().clear_program)["result"])

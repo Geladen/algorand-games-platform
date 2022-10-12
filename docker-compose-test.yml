@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ops/docker/Dockerfile.test
+    env_file: 
+      - ops/env/test.env
+    links:
+      - "algorand-node:algorand-node"
+    tty: true
+    depends_on:
+      - algorand-node
+
+  algorand-node:
+    build: 
+      context: ops/algorand-node
+      dockerfile: Dockerfile
+    environment:
+      - PORT_ALGOD=8080
+    tty: true

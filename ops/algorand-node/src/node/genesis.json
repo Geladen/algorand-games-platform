@@ -1,0 +1,62 @@
+{
+  "alloc": [
+    {
+      "addr": "7777777777777777777777777777777777777777777777777774MSJUVU",
+      "comment": "RewardsPool",
+      "state": {
+        "algo": 125000000000000,
+        "onl": 2
+      }
+    },
+    {
+      "addr": "A7NMWS3NT3IUDMLVO26ULGXGIIOUQ3ND2TXSER6EBGRZNOBOUIQXHIBGDE",
+      "comment": "FeeSink",
+      "state": {
+        "algo": 100000,
+        "onl": 2
+      }
+    },
+    {
+      "addr": "DET2YQ3WIEP7RYJ6TK7QPKPGQYPMAIFTTDYMEE4SBTYAZ7DH3ITKNU7QIM",
+      "comment": "Xavier",
+      "state": {
+        "algo": 4000000000000000,
+        "onl": 1,
+        "sel": "+U7/HVuwNe1MlZ3LOoVCEsVruZIJskogwoENRn4+CYI=",
+        "vote": "LDP2AZVHkxU62SfsXFICkYbuqhhqkq8PB9UwJLGSA4k=",
+        "voteKD": 10000,
+        "voteLst": 3000000
+      }
+    },
+    {
+      "addr": "W3FB26OR3F5YEA3U7ISUATBK4QXDSW4W52IAHXE56OKJW6XP77JDP45ODE",
+      "comment": "Alice",
+      "state": {
+        "algo": 4000000000000000,
+        "onl": 1,
+        "sel": "18H31wGMc7wf7fq79ukUIVAk6CLypLjt9+1Gd2ksQQ8=",
+        "vote": "r8vxIRwNcsI7FZqQT6m3io3azAK6C6ymaCFblgmwRUo=",
+        "voteKD": 10000,
+        "voteLst": 3000000
+      }
+    },
+    {
+      "addr": "IM7Z2NISTFZKHKS2IJYGOO27523VEJ32UREF6YLINOGJJJDROUWHTGWNWE",
+      "comment": "Bob",
+      "state": {
+        "algo": 2000000000000000,
+        "onl": 1,
+        "sel": "dNJ/qVuq2WSv/hnnI52XbgUSQEuPGZ7IfmzwP/jEbyI=",
+        "vote": "FH7+POTu9cdrq9kQTjWyY70SjMyyLQb0G9tNcL3WMWs=",
+        "voteKD": 10000,
+        "voteLst": 3000000
+      }
+    }
+  ],
+  "devmode": true,
+  "fees": "A7NMWS3NT3IUDMLVO26ULGXGIIOUQ3ND2TXSER6EBGRZNOBOUIQXHIBGDE",
+  "id": "v1.0",
+  "network": "dev",
+  "proto": "future",
+  "rwd": "7777777777777777777777777777777777777777777777777774MSJUVU"
+}
