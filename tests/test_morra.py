@@ -138,8 +138,9 @@ def test_morra_forfeit_commit():
     bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}).encode()).digest())
     for _ in range(7):
         alice_appclient.fund(0, alice.pk)
-        cant(lambda: bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk))
+        cant(lambda: bob_appclient.call(SaMurra.forfeit, bob.pk))
     alice_appclient.fund(0, alice.pk)
+    bob_appclient.call(SaMurra.forfeit, bob.pk, asset=asset, creator=alice.pk)
     bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk)
     
 def test_morra_forfeit_reveal():
@@ -175,6 +176,7 @@ def test_morra_forfeit_reveal():
     bob_appclient.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}))
     for _ in range(7):
         alice_appclient.fund(0, alice.pk)
-        cant(lambda: bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk))
+        cant(lambda: bob_appclient.call(SaMurra.forfeit, bob.pk))
     alice_appclient.fund(0, alice.pk)
+    bob_appclient.call(SaMurra.forfeit, bob.pk, asset=asset)
     bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk)

@@ -24,6 +24,7 @@ def interact_platform():
         print("2. Swap berluscoin")
         print("3. Create game")
         print("4. Join game")
+        print("5. Your profile")
         print("0. Quit")
         choice = int(input("> "))
         if choice == 1:
@@ -34,6 +35,8 @@ def interact_platform():
             interact_create()
         elif choice == 4:
             interact_join()
+        elif choice == 5:
+            interact_profile()
         else:
             break
         
@@ -70,6 +73,7 @@ def interact_create():
     
     if choice == 1:
         app_id = interact_morra.interact_create()
+        print(f"Game {app_id} created!")
         interact_morra.interact_play(app_id)
     elif choice == 2:
         pass
@@ -82,7 +86,7 @@ def interact_join():
             continue
         deltas = [(ld['address'], ld['delta']) for ld in txn['local-state-delta']]
         deltas = [(a,v) for a,d in deltas for v in d]
-        values = {(d['value']['uint'], a) for (a,d) in deltas if d['key'] == b64encode(b'current_game').decode()}
+        values = {(d['value']['uint'], a) for (a,d) in deltas if d['key'] == b64encode(b'current_game').decode() and d['value']['action'] == 2}
         games.update(values)
     games = [(g, games[g]) for g in sorted(list(set(games.keys())), reverse=True)]
         
@@ -92,6 +96,10 @@ def interact_join():
     choice = int(input('> '))
     
     app_id, challenger = games[choice-1]
-    print(challenger, app_id, player.pk)
     interact_morra.interact_join(challenger, app_id)
     interact_morra.interact_play(app_id)
+
+def interact_profile():
+    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
+    puntazzi = appclient.get_account_state()['puntazzi']
+    print(f"Your puntazzi: {puntazzi}")

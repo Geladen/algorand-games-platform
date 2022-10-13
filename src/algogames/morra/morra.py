@@ -5,6 +5,8 @@ from algorand import client
 # A player creates the contract and decides the stake
 # A second player joins the match sending the stake
 
+action_timeout = 10
+
 INIT = Int(0)
 POOR = Int(1)
 WAIT = Int(2)
@@ -15,7 +17,7 @@ FINISH = Int(5)
 # COMMIT_DURATION = Int(15)
 # REVEAL_DURATION = Int(15)
 WINNING_SCORE = Int(2)
-TIMEOUT = Int(10)
+TIMEOUT = Int(action_timeout)
 
 class SaMurra(Application):
     stake: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
@@ -185,12 +187,12 @@ class SaMurra(Application):
     def finish(self):
         return Seq(
             Assert(
-                self.player_score.get() >= WINNING_SCORE
+                self.winner.get() == Txn.sender()
             ),
             self.empty_account_caller()
         )
 
-    @internal
+    @external
     def forfeit(self):
         return Seq(
             Assert(Or(
@@ -203,7 +205,8 @@ class SaMurra(Application):
                     self.action_timer.get() + TIMEOUT <= Global.round(),
                     self.player_state.get() == REVEAL)
             )),
-            self.empty_account_caller()
+            self.state.set(FINISH),
+            self.winner.set(Txn.sender())
         )
         
     @internal
@@ -238,8 +241,6 @@ class SaMurra(Application):
     def delete(self, asset: abi.Asset, creator: abi.Account):
         return If(self.state.get() == FINISH).Then(
                 self.finish()
-            ).ElseIf(Or(self.state.get() == COMMIT, self.state.get() == REVEAL)).Then(
-                self.forfeit()
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.cancel()
             ).Else(
