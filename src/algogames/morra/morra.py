@@ -104,7 +104,7 @@ class SaMurra(Application):
                 Txn.sender() == Global.creator_address(),
                 self.state.get() == WAIT,
             ),
-            self.empty_account(Global.creator_address())
+            self.empty_account_caller()
         )
 
     @external
@@ -187,7 +187,7 @@ class SaMurra(Application):
             Assert(
                 self.player_score.get() >= WINNING_SCORE
             ),
-            self.empty_account(Txn.sender())
+            self.empty_account_caller()
         )
 
     @internal
@@ -196,24 +196,24 @@ class SaMurra(Application):
             Assert(Or(
                 And(
                     self.state.get() == COMMIT,
-                    self.action_timer.get() + TIMEOUT > Global.round(),
+                    self.action_timer.get() + TIMEOUT <= Global.round(),
                     self.player_state.get() == COMMIT),
                 And(
                     self.state.get() == REVEAL,
-                    self.action_timer.get() + TIMEOUT > Global.round(),
+                    self.action_timer.get() + TIMEOUT <= Global.round(),
                     self.player_state.get() == REVEAL)
             )),
-            self.empty_account(Txn.sender())
+            self.empty_account_caller()
         )
         
     @internal
-    def empty_account(self, to: abi.String):
+    def empty_account_caller(self):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
                 TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_close_to: to.get(),
+                TxnField.asset_close_to: Txn.sender(),
             }),
             InnerTxnBuilder.Next(),
             InnerTxnBuilder.SetFields({
@@ -231,19 +231,19 @@ class SaMurra(Application):
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.join(txn)
             ).Else(
-                Reject()
+                Err()
             )
     
     @delete
-    def delete(self, asset: abi.Asset):
+    def delete(self, asset: abi.Asset, creator: abi.Account):
         return If(self.state.get() == FINISH).Then(
                 self.finish()
-            ).ElseIf(self.state.get() == COMMIT or self.state.get() == REVEAL).Then(
+            ).ElseIf(Or(self.state.get() == COMMIT, self.state.get() == REVEAL)).Then(
                 self.forfeit()
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.cancel()
             ).Else(
-                Reject()
+                Err()
             )
         
 from base64 import b64decode

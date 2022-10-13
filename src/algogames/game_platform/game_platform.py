@@ -65,10 +65,21 @@ class GamePlatform(Application):
         )
 
     @external
+    def join_game(self, challenger: abi.Account, txn: abi.ApplicationCallTransaction):
+        return Seq(
+            Assert(
+                txn.get().application_id() == self.current_game[challenger.address()].get(),
+                txn.get().on_completion() == OnComplete.OptIn,
+            ),
+            self.current_game.set(self.current_game[challenger.address()].get()),
+        )
+        
+    @external
     def win_game(self, app: abi.Application):
         return Seq(
             Assert(
                 App.globalGetEx(self.current_game.get(), Bytes("winner")).outputReducer(lambda value, _: value) == Txn.sender(),
             ),
-            self.puntazzi.set(self.puntazzi.get() + Int(1))
+            self.current_game.set(Int(0)),
+            self.puntazzi.set(self.puntazzi.get() + Int(1)),
         )

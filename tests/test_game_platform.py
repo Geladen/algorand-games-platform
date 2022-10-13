@@ -1,9 +1,10 @@
 import algosdk
-from algosdk.atomic_transaction_composer import TransactionWithSigner
+from algosdk.atomic_transaction_composer import AtomicTransactionComposer, TransactionWithSigner
 from beaker.client.application_client import ApplicationClient
 import json
 from hashlib import sha256
-from src.algogames.morra.morra import SaMurra, approval_binary as morra_ab, clear_binary as morra_cb
+from src.algogames.beaker2 import call_nosend, create_nosend, opt_in_nosend, finalize
+from src.algogames.morra.morra import SaMurra
 from src.algogames.game_platform.game_platform import GamePlatform
 import pytest
 
@@ -64,52 +65,45 @@ def cant(f):
     with pytest.raises(Exception): f()
 
 
-def test_morra_succesfull():
+def test_morra_win_alice():
     xavier, alice, bob = init_env(3)
-        
+    
+    # Create platform    
     xavier_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=xavier.acc)
-    
     app_id_platform, app_acc_platform, _ = xavier_appclient_platform.create()
-    
-    alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
-    bob_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=bob.acc, app_id=app_id_platform)
-    
     res = xavier_appclient_platform.call(GamePlatform.init, xavier.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(xavier.pk, sp, app_acc_platform, 210000), signer=xavier.acc))
     asset = res.tx_info["inner-txns"][0]["asset-index"]
+    
+    # Opt into platform
+    alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
     alice_appclient_platform.opt_in(alice.pk)
+    bob_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=bob.acc, app_id=app_id_platform)
+    bob_appclient_platform.opt_in(bob.pk)
     
-    alice_appclient_platform.call(GamePlatform.new_game, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.ApplicationCreateTxn(
-        sender=alice.pk, 
-        sp=sp, 
-        on_complete=algosdk.future.transaction.OnComplete.NoOpOC, 
-        approval_program=morra_ab, 
-        clear_program=morra_cb, 
-        global_schema=SaMurra().app_state.schema(),
-        local_schema=SaMurra().acct_state.schema(),
-        foreign_assets=[asset],
-        app_args=[b'S\xff\x1a\x06', b'\x00'],
-    ), signer=alice.acc))
-    
+    # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
         opt_in_asset(acc, asset)
-        acc_appclient_platform.call(GamePlatform.swap, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(
-            sender=acc.pk,
-            sp=sp,
-            receiver=app_acc_platform,
-            amt=3,
-        ), signer=acc.acc))
-    
+        acc_appclient_platform.call(GamePlatform.swap, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
+        
+    # Create new morra game
+    alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
+    finalize(alice_appclient_platform, call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, 
+        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset)))
     app_id_morra = alice_appclient_platform.get_account_state()["current_game"]
     app_acc_morra = algosdk.logic.get_application_address(app_id_morra)
     
+    # Initialize morra game
     alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc, app_id=app_id_morra)
-    bob_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=bob.acc, app_id=app_id_morra)
-    
-
-    alice_appclient_morra.call(SaMurra.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc_morra, 210000), signer=alice.acc), asset=asset)
+    alice_appclient_morra.call(SaMurra.init, alice.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc_morra, 210000), signer=alice.acc))
     alice_appclient_morra.opt_in(alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc_morra, 2, asset), signer=alice.acc))
-    bob_appclient_morra.opt_in(bob.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc_morra, 2, asset), signer=bob.acc))
     
+    # Join morra game
+    bob_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=bob.acc, app_id=app_id_morra)
+    finalize(bob_appclient_platform, call_nosend(bob_appclient_platform, GamePlatform.join_game, bob.pk, challenger=alice.pk, 
+        txn=opt_in_nosend(bob_appclient_morra, bob.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc_morra, 2, asset), signer=bob.acc))))
+    
+    # Play
     alice_appclient_morra.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}).encode()).digest())
     bob_appclient_morra.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}).encode()).digest())
     
@@ -121,7 +115,62 @@ def test_morra_succesfull():
     
     bob_appclient_morra.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}))
     alice_appclient_morra.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 5, "hand": 1, "nonce": 1462867421}))
-    
-    alice_appclient_platform.call(GamePlatform.win_game, alice.pk, app=app_id_morra)
 
-    alice_appclient_morra.delete(alice.pk, asset=asset)
+    # Win    
+    alice_appclient_platform.call(GamePlatform.win_game, alice.pk, app=app_id_morra)
+    alice_appclient_morra.delete(alice.pk, asset=asset, creator=alice.pk)
+
+def tesasdt_morra_win_bob():
+    xavier, alice, bob = init_env(3)
+    
+    # Create platform    
+    xavier_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=xavier.acc)
+    app_id_platform, app_acc_platform, _ = xavier_appclient_platform.create()
+    res = xavier_appclient_platform.call(GamePlatform.init, xavier.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(xavier.pk, sp, app_acc_platform, 210000), signer=xavier.acc))
+    asset = res.tx_info["inner-txns"][0]["asset-index"]
+    
+    # Opt into platform
+    alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
+    alice_appclient_platform.opt_in(alice.pk)
+    bob_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=bob.acc, app_id=app_id_platform)
+    bob_appclient_platform.opt_in(bob.pk)
+    
+    # Buy some berluscoin
+    for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
+        opt_in_asset(acc, asset)
+        acc_appclient_platform.call(GamePlatform.swap, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
+        
+    # Create new morra game
+    alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
+    finalize(alice_appclient_platform,call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, 
+        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset)))
+    app_id_morra = alice_appclient_platform.get_account_state()["current_game"]
+    app_acc_morra = algosdk.logic.get_application_address(app_id_morra)
+    
+    # Initialize morra game
+    alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc, app_id=app_id_morra)
+    alice_appclient_morra.call(SaMurra.init, alice.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc_morra, 210000), signer=alice.acc))
+    alice_appclient_morra.opt_in(alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc_morra, 2, asset), signer=alice.acc))
+    
+    # Join morra game
+    bob_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=bob.acc, app_id=app_id_morra)
+    finalize(bob_appclient_platform, call_nosend(bob_appclient_platform, GamePlatform.join_game, bob.pk, challenger=alice.pk, 
+        txn=opt_in_nosend(bob_appclient_morra, bob.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc_morra, 2, asset), signer=bob.acc))))
+    
+    # Play
+    alice_appclient_morra.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 6, "hand": 1, "nonce": 1462867421}).encode()).digest())
+    bob_appclient_morra.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 3, "hand": 2, "nonce": 7347342978432}).encode()).digest())
+    
+    alice_appclient_morra.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 6, "hand": 1, "nonce": 1462867421}))
+    bob_appclient_morra.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 3, "hand": 2, "nonce": 7347342978432}))
+    
+    bob_appclient_morra.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 5, "hand": 4, "nonce": 7347342978432}).encode()).digest())
+    alice_appclient_morra.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 7, "hand": 1, "nonce": 1462867421}).encode()).digest())
+    
+    bob_appclient_morra.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 5, "hand": 4, "nonce": 7347342978432}))
+    alice_appclient_morra.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 7, "hand": 1, "nonce": 1462867421}))
+
+    # Win    
+    bob_appclient_platform.call(GamePlatform.win_game, bob.pk, app=app_id_morra)
+    bob_appclient_morra.delete(bob.pk, asset=asset, creator=alice.pk)

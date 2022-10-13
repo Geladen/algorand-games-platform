@@ -56,7 +56,7 @@ def init_env(n):
     xavier, *others = accounts
     
     for acc in accounts:
-        fund_algo(funder, acc, 1000000)
+        fund_algo(funder, acc, 10000000)
     asset, _ = create_asset(xavier)
     for acc in others:
         opt_in_asset(acc, asset)
@@ -75,7 +75,7 @@ def test_morra_cancel():
     app_id, app_acc, _ = alice_appclient.create(asset=asset)
     alice_appclient.call(SaMurra.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 210000), signer=alice.acc), asset=asset)
     alice_appclient.opt_in(alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 2, asset), signer=alice.acc))
-    alice_appclient.delete(alice.pk, asset=asset)
+    alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk)
 
 def test_morra_succesfull():
     alice, bob, charlie, asset = init_env(3)
@@ -93,11 +93,14 @@ def test_morra_succesfull():
     cant(lambda: charlie_appclient.opt_in(charlie.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(charlie.pk, sp, app_acc, 2, asset), signer=charlie.acc)))
     
     alice_appclient.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
     bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
     
     alice_appclient.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}))
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
     bob_appclient.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}))
-    cant(lambda: alice_appclient.delete(alice.pk, asset=asset))
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
     
     bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}).encode()).digest())
     alice_appclient.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 5, "hand": 1, "nonce": 1462867421}).encode()).digest())
@@ -105,4 +108,73 @@ def test_morra_succesfull():
     bob_appclient.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}))
     alice_appclient.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 5, "hand": 1, "nonce": 1462867421}))
     
-    alice_appclient.delete(alice.pk, asset=asset)
+    alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk)
+
+def test_morra_forfeit_commit():
+    alice, bob, charlie, asset = init_env(3)
+        
+    alice_appclient = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset)
+
+    bob_appclient = ApplicationClient(client=client, app=SaMurra(), signer=bob.acc, app_id=app_id)
+    charlie_appclient = ApplicationClient(client=client, app=SaMurra(), signer=charlie.acc, app_id=app_id)
+    
+    alice_appclient.call(SaMurra.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 210000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 2, asset), signer=alice.acc))
+    bob_appclient.opt_in(bob.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 2, asset), signer=bob.acc))
+    cant(lambda: charlie_appclient.opt_in(charlie.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(charlie.pk, sp, app_acc, 2, asset), signer=charlie.acc)))
+    
+    alice_appclient.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    
+    alice_appclient.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}))
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    bob_appclient.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}))
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    
+    bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}).encode()).digest())
+    for _ in range(7):
+        alice_appclient.fund(0, alice.pk)
+        cant(lambda: bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk))
+    alice_appclient.fund(0, alice.pk)
+    bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk)
+    
+def test_morra_forfeit_reveal():
+    alice, bob, charlie, asset = init_env(3)
+        
+    alice_appclient = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset)
+
+    bob_appclient = ApplicationClient(client=client, app=SaMurra(), signer=bob.acc, app_id=app_id)
+    charlie_appclient = ApplicationClient(client=client, app=SaMurra(), signer=charlie.acc, app_id=app_id)
+    
+    alice_appclient.call(SaMurra.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 210000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 2, asset), signer=alice.acc))
+    bob_appclient.opt_in(bob.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 2, asset), signer=bob.acc))
+    cant(lambda: charlie_appclient.opt_in(charlie.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(charlie.pk, sp, app_acc, 2, asset), signer=charlie.acc)))
+    
+    alice_appclient.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    
+    alice_appclient.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 3, "hand": 1, "nonce": 1462867421}))
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    bob_appclient.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 6, "hand": 2, "nonce": 7347342978432}))
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    
+    bob_appclient.call(SaMurra.commit, bob.pk, commit=sha256(json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    alice_appclient.call(SaMurra.commit, alice.pk, commit=sha256(json.dumps({"guess": 5, "hand": 1, "nonce": 1462867421}).encode()).digest())
+    cant(lambda: alice_appclient.delete(alice.pk, asset=asset, creator=alice.pk))
+    
+    bob_appclient.call(SaMurra.reveal, bob.pk, other=algosdk.encoding.decode_address(alice.pk), reveal=json.dumps({"guess": 7, "hand": 4, "nonce": 7347342978432}))
+    for _ in range(7):
+        alice_appclient.fund(0, alice.pk)
+        cant(lambda: bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk))
+    alice_appclient.fund(0, alice.pk)
+    bob_appclient.delete(bob.pk, asset=asset, creator=alice.pk)
