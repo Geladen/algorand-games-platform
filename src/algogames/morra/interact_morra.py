@@ -158,7 +158,7 @@ def interact_play(app_id):
             print("Registering win...", end=" ", flush=True)
             trysend(lambda: appclient_platform.call(GamePlatform.win_game, player.pk, challenger=other, app=app_id))
             print("Getting money...", end=" ", flush=True)
-            trysend(lambda: appclient_morra.delete(player.pk, asset=berluscoin_id, creator=creator))
+            trysend(lambda: appclient_morra.delete(player.pk, asset=berluscoin_id, creator=creator, fee_holder=fee_holder.pk))
             print("Done!")
             return
         elif global_state["state"] == 5 and global_state["winner"] != codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():

@@ -22,7 +22,7 @@ def interact_create():
     try:
         print("Creating rps game...", end=" ", flush=True)
         appclient_rps = ApplicationClient(client=client, app=RPS(), signer=player.acc)
-        finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="rps", txn=create_nosend(appclient_rps, player.pk, asset=berluscoin_id)))
+        finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="rps", txn=create_nosend(appclient_rps, player.pk, asset=berluscoin_id, fee_holder=fee_holder.pk)))
         app_id_rps = appclient_platform.get_account_state()["current_game"]
     
         appclient_rps = ApplicationClient(client=client, app=RPS(), signer=player.acc, app_id=app_id_rps)
