@@ -1,6 +1,6 @@
 from typing import Callable
 from beaker.client.application_client import ApplicationClient
-from utils import ask_number, ask_string, find_games, is_opted, menu_callback, try_get_platform, menu
+from utils import ask_number, ask_string, find_games, is_opted, menu_callback, try_get_local, menu
 from config import player, platform_id, berluscoin_id
 from algorand import client, indexer
 from algosdk.future.transaction import wait_for_confirmation
@@ -23,8 +23,8 @@ def _create_platform():
 def interact_platform():
     cont = True
     while cont:
-        current_game = try_get_platform("current_game")
-        username = try_get_platform("username")
+        current_game = try_get_local("current_game", platform_id)
+        username = try_get_local("username", platform_id)
         if username is not None:
             print(f"\nHi, {username}")
         cont = menu_callback(f"Choose your action!", [
@@ -40,7 +40,7 @@ def interact_opt():
     appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
     
     if not is_opted(player.pk, platform_id):
-        username = ask_string("Choose your username: ", lambda x: len(x) > 0)
+        username = ask_string("Choose your username:", lambda x: len(x) > 0)
         print("Joining the platform...", end=" ", flush=True)
         appclient.opt_in(player.pk, username=username)
         print("Done!")
@@ -51,7 +51,7 @@ def interact_swap():
     appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
     sp = client.suggested_params()
     
-    amt = ask_number("How many berluscoin do you want to buy? ", [0, None])
+    amt = ask_number("How many berluscoin do you want to buy?", [0, None])
     
     if amt > 0:
         if not(any(asset['asset-id'] == berluscoin_id for asset in client.account_info(player.pk)["assets"])):
@@ -92,6 +92,6 @@ def interact_join():
         print("No games, why don't you create one?")
         
 def interact_profile():
-    puntazzi = try_get_platform("puntazzi") 
+    puntazzi = try_get_local("puntazzi", platform_id) 
     puntazzi = 0 if puntazzi is None else puntazzi
     print(f"Your puntazzi: {puntazzi}")

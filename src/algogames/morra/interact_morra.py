@@ -2,7 +2,7 @@ from hashlib import sha256
 import json
 import random
 from beaker.client.application_client import ApplicationClient
-from utils import ask_number, trysend
+from utils import ask_number, ask_yn, try_get_global, trysend
 from game_platform.game_platform import GamePlatform
 from algorand import client
 from morra.morra import SaMurra, action_timeout
@@ -30,7 +30,7 @@ def interact_create():
         appclient_morra.call(SaMurra.init, player.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(player.pk, sp, appclient_morra.app_addr, 210000), signer=player.acc), asset=berluscoin_id)
         print("Done!")
     
-        stake = ask_number("How much do you want to stake? ")    
+        stake = ask_number("How much do you want to stake?")    
         print("Sending stake...", end=" ", flush=True)
         appclient_morra.opt_in(player.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc))
         print("Done!")
@@ -58,7 +58,13 @@ def interact_join(challenger, app_id):
     
     try:
         sp = client.suggested_params()
-        stake = appclient_morra.get_application_state()['stake']
+        stake = try_get_global('stake', app_id)
+        if stake is None:
+            print("Stake not yet defined.")
+            return False
+        choice = ask_yn(f"Stake is {stake}. Join?")
+        if choice == False:
+            return False
         print("Joining game...", end=" ", flush=True)
         finalize(appclient_morra, call_nosend(appclient_platform, GamePlatform.join_game, player.pk, challenger=challenger, 
             txn=opt_in_nosend(appclient_morra, player.pk, 
@@ -120,8 +126,8 @@ def interact_play(app_id):
             print("Waiting for players...")
             sleep(5)
         elif global_state["state"] == 3 and ("player_state" not in local_state or local_state["player_state"] != 3):
-            hand = ask_number("What is your hand? ")
-            guess = ask_number("What is your guess? ", skip_line=False)
+            hand = ask_number("What is your hand?")
+            guess = ask_number("What is your guess?", skip_line=False)
             nonce = random.randint(0, 2**64-1)
             print("Sending commit...", end=" ", flush=True)
             trysend(lambda: appclient_morra.call(SaMurra.commit, player.pk, commit=sha256(json.dumps({"guess": guess, "hand": hand, "nonce": nonce}).encode()).digest()))
@@ -165,7 +171,7 @@ def interact_play(app_id):
             print("Done!")
         elif global_state["state"] == 1:
             sp = client.suggested_params()
-            stake = ask_number("How much do you want to stake? ")
+            stake = ask_number("How much do you want to stake?")
             print("Sending stake...", end=" ", flush=True)
             trysend(lambda: appclient_morra.opt_in(player.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc)))
             print("Done!")

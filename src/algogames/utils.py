@@ -25,13 +25,19 @@ def find_games():
     games = [(g, games[g]) for g in sorted(list(set(games.keys())), reverse=True)]
     return games
 
-def try_get_platform(key: str):
-    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
+def try_get_local(key: str, app_id: int):
+    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=app_id)
     if is_opted(player.pk, platform_id):
         local_state = appclient.get_account_state()
         return local_state[key] if key in local_state else None
     
     return None
+        
+def try_get_global(key: str, app_id: int):
+    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=app_id)
+    global_state = appclient.get_application_state()
+    return global_state[key] if key in global_state else None
+    
         
 def is_opted(account, app_id):
     return any(application['id'] == app_id for application in client.account_info(account)["apps-local-state"])
@@ -46,18 +52,25 @@ def ask_string(query: str, valid: Callable[[str], bool], skip_line=True):
     first = True
     while True:
         pre = "\n" if first and skip_line else ""
-        choice = input(f"{pre}{query}")
+        choice = input(f"{pre}{query} ")
         first = False
         if valid(choice): 
             break
         
     return choice
 
+def ask_yn(query: str, skip_line=True):
+    first = True
+    pre = "\n" if first and skip_line else ""
+    choice = input(f"{pre}{query} (y/N) ")
+    first = False
+    return choice.lower() == "y"
+
 def ask_number(query: str, range: Tuple[int|None, int|None]=None, skip_line=True):
     first = True
     while True:
         pre = "\n" if first and skip_line else ""
-        choice = input(f"{pre}{query}")
+        choice = input(f"{pre}{query} ")
         first = False
         if not choice.lstrip('-+').isnumeric(): 
             continue
@@ -80,7 +93,7 @@ def menu(query: str, options: List[str], zero_option=None, skip_line=True):
         print(f"0. {zero_option}")
         
     range = (0, len(options)) if zero_option else (1, len(options))
-    return ask_number("> ", range=range)
+    return ask_number(">", range=range)
         
 def menu_callback(query: str, options: List[Tuple[str, Callable[[], None]]], quit_option=False, skip_line=True):
     choice = menu(query, [option[0] for option in options], zero_option="Quit" if quit_option else None, skip_line=skip_line)
