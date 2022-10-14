@@ -77,7 +77,7 @@ def create_nosend(
     on_complete: transaction.OnComplete = transaction.OnComplete.NoOpOC,
     extra_pages: int = None,
     **kwargs,
-) -> tuple[int, str, str]:
+) -> AtomicTransactionComposer:
     """Submits a signed ApplicationCallTransaction with application id == 0 and the schema and source from the Application passed"""
 
     appclient.build()
@@ -140,7 +140,7 @@ def update_nosend(
     args: list[Any] = None,
     suggested_params: transaction.SuggestedParams = None,
     **kwargs,
-) -> str:
+) -> AtomicTransactionComposer:
 
     """Submits a signed ApplicationCallTransaction with OnComplete set to UpdateApplication and source from the Application passed"""
     appclient.build()
@@ -188,7 +188,7 @@ def opt_in_nosend(
     args: list[Any] = None,
     suggested_params: transaction.SuggestedParams = None,
     **kwargs,
-) -> str:
+) -> AtomicTransactionComposer:
     """Submits a signed ApplicationCallTransaction with OnComplete set to OptIn"""
 
     sp = appclient.get_suggested_params(suggested_params)
@@ -231,7 +231,7 @@ def close_out_nosend(
     args: list[Any] = None,
     suggested_params: transaction.SuggestedParams = None,
     **kwargs,
-) -> str:
+) -> AtomicTransactionComposer:
     """Submits a signed ApplicationCallTransaction with OnComplete set to CloseOut"""
 
     sp = appclient.get_suggested_params(suggested_params)
@@ -274,7 +274,7 @@ def clear_state_nosend(
     args: list[Any] = None,
     suggested_params: transaction.SuggestedParams = None,
     **kwargs,
-) -> str:
+) -> AtomicTransactionComposer:
 
     """Submits a signed ApplicationCallTransaction with OnComplete set to ClearState"""
 
@@ -318,7 +318,7 @@ def delete_nosend(
     args: list[Any] = None,
     suggested_params: transaction.SuggestedParams = None,
     **kwargs,
-) -> str:
+) -> AtomicTransactionComposer:
     """Submits a signed ApplicationCallTransaction with OnComplete set to DeleteApplication"""
 
     sp = appclient.get_suggested_params(suggested_params)
