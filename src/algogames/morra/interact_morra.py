@@ -12,7 +12,7 @@ from algosdk.atomic_transaction_composer import TransactionWithSigner
 import algosdk
 import beaker
 import codecs
-from config import player, berluscoin_id, platform_id
+from config import player, berluscoin_id, platform_id, fee_holder
 
 def interact_create():
     appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=player.acc, app_id=platform_id)
@@ -22,7 +22,7 @@ def interact_create():
     try:
         print("Creating morra game...", end=" ", flush=True)
         appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=player.acc)
-        finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="morra", txn=create_nosend(appclient_morra, player.pk, asset=berluscoin_id)))
+        finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="morra", txn=create_nosend(appclient_morra, player.pk, asset=berluscoin_id, fee_holder=fee_holder.pk)))
         app_id_morra = appclient_platform.get_account_state()["current_game"]
     
         appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=player.acc, app_id=app_id_morra)
