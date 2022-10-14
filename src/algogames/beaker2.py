@@ -10,7 +10,6 @@ from algosdk.atomic_transaction_composer import (
     MultisigTransactionSigner,
     LogicSigTransactionSigner,
     AtomicTransactionComposer,
-    ABIResult,
     ABI_RETURN_HASH,
     TransactionWithSigner,
     abi,
@@ -374,7 +373,7 @@ def call_nosend(
     lease: bytes = None,
     rekey_to: str = None,
     **kwargs,
-) -> ABIResult:
+) -> AtomicTransactionComposer:
 
     """Handles calling the application"""
 

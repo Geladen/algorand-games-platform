@@ -1,7 +1,12 @@
 from typing import Final
 from pyteal import *
 from beaker import *
+from rps.rps import approval_binary as rps_ab, clear_binary as rps_cb
 from morra.morra import approval_binary as morra_ab, clear_binary as morra_cb
+from config import fee_holder
+import algosdk
+
+FEE_HOLDER = Bytes(algosdk.encoding.decode_address(fee_holder.pk))
 
 class GamePlatform(Application):
     berluscoin: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
@@ -9,7 +14,7 @@ class GamePlatform(Application):
     username: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     current_game: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     game_time: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
-    game_type: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
+    game_type: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     puntazzi: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
 
     @create
@@ -38,7 +43,7 @@ class GamePlatform(Application):
         )
         
     @external
-    def swap(self, txn: abi.PaymentTransaction, asset: abi.Asset):
+    def buy(self, txn: abi.PaymentTransaction, asset: abi.Asset):
         return Seq(
             Assert(
                 txn.get().receiver() == Global.current_application_address(),
@@ -53,6 +58,22 @@ class GamePlatform(Application):
             InnerTxnBuilder.Submit()
         )
         
+    @external
+    def sell(self, txn: abi.AssetTransferTransaction):
+        return Seq(
+            Assert(
+                txn.get().xfer_asset() == self.berluscoin.get(),
+                txn.get().asset_receiver() == Global.current_application_address(),
+            ),
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.Payment,
+                TxnField.amount: txn.get().amount(),
+                TxnField.receiver: txn.get().sender(),
+            }),
+            InnerTxnBuilder.Submit()
+        )
+        
     @opt_in
     def opt_in(self, username: abi.String):
         return Seq(
@@ -60,15 +81,27 @@ class GamePlatform(Application):
         )
         
     @external
-    def new_game(self, txn: abi.ApplicationCallTransaction):
+    def new_game(self, game: abi.String, txn: abi.ApplicationCallTransaction):
         return Seq(
-            Assert(
-                txn.get().approval_program() == Bytes(morra_ab),
-                txn.get().clear_state_program() == Bytes(morra_cb),
-            ),
+            Assert(And(
+                txn.get().accounts[1] == FEE_HOLDER,
+                txn.get().assets[0] == self.berluscoin.get(),
+                Or(
+                    And(
+                        game.get() == Bytes("morra"),
+                        txn.get().approval_program() == Bytes(morra_ab),
+                        txn.get().clear_state_program() == Bytes(morra_cb),
+                    ),
+                    And(
+                        game.get() == Bytes("rps"),
+                        txn.get().approval_program() == Bytes(rps_ab),
+                        txn.get().clear_state_program() == Bytes(rps_cb),
+                    ),
+                )
+            )),
             self.current_game.set(GeneratedID(txn.index())),
             self.game_time.set(Global.latest_timestamp()),
-            self.game_type.set(Int(0))
+            self.game_type.set(game.get())
         )
 
     @external

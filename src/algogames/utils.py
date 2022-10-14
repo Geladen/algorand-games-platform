@@ -13,14 +13,15 @@ def find_games():
             if "key-value" in ls and ls["id"] == platform_id:
                 current_game = next((kv["value"]["uint"] for kv in ls["key-value"] if codecs.decode(kv["key"].encode(), "base64").decode() == "current_game"), None)
                 game_time = next((kv["value"]["uint"] for kv in ls["key-value"] if codecs.decode(kv["key"].encode(), "base64").decode() == "game_time"), None)
-                game_type = next((kv["value"]["uint"] for kv in ls["key-value"] if codecs.decode(kv["key"].encode(), "base64").decode() == "game_type"), None)
+                game_type = next((kv["value"]["bytes"] for kv in ls["key-value"] if codecs.decode(kv["key"].encode(), "base64").decode() == "game_type"), None)
                 username = next((kv["value"]["bytes"] for kv in ls["key-value"] if codecs.decode(kv["key"].encode(), "base64").decode() == "username"), None)
                 if current_game:
-                    if game_type == 0:
-                        game_name = "morra"
-                    else:
-                        game_name = "?"
-                    games[current_game] = { "addr": acc["address"], "time": game_time, "game": game_name, "user": codecs.decode(username.encode(), 'base64').decode() }
+                    games[current_game] = { 
+                        "addr": acc["address"], 
+                        "time": game_time, 
+                        "game": codecs.decode(game_type.encode(), 'base64').decode(), 
+                        "user": codecs.decode(username.encode(), 'base64').decode() 
+                    }
                         
     games = [(g, games[g]) for g in sorted(list(set(games.keys())), reverse=True)]
     return games
@@ -59,12 +60,15 @@ def ask_string(query: str, valid: Callable[[str], bool], skip_line=True):
         
     return choice
 
-def ask_yn(query: str, skip_line=True):
+def ask_choice(query: str, choices=List[str], skip_line=True):
     first = True
-    pre = "\n" if first and skip_line else ""
-    choice = input(f"{pre}{query} (y/N) ")
-    first = False
-    return choice.lower() == "y"
+    while True:
+        pre = "\n" if first and skip_line else ""
+        choice = input(f"{pre}{query} ({'/'.join(choices)}) ")
+        first = False
+        if choice.lower() in choices:
+            break
+    return choice.lower()
 
 def ask_number(query: str, range: Tuple[int|None, int|None]=None, skip_line=True):
     first = True

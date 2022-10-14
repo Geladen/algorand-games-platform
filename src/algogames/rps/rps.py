@@ -2,8 +2,8 @@ from typing import Final
 from pyteal import *
 from beaker import *
 from algorand import client
-# A player creates the contract and decides the stake
-# A second player joins the match sending the stake
+
+action_timeout = 10
 
 INIT = Int(0)
 POOR = Int(1)
@@ -12,20 +12,18 @@ COMMIT = Int(3)
 REVEAL = Int(4)
 FINISH = Int(5)
 
-# COMMIT_DURATION = Int(15)
-# REVEAL_DURATION = Int(15)
 WINNING_SCORE = Int(2)
-TIMEOUT = Int(10)
+TIMEOUT = Int(action_timeout)
 
-ROCK = 'Rock'
-PAPER = 'Paper'
-SCISSOR = 'Scissor'
+ROCK = Bytes('rock')
+PAPER = Bytes('paper')
+SCISSORS = Bytes('scissors')
 
-
-class SaMurra(Application):
+class RPS(Application):
     stake: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     challenger: Final[ApplicationStateValue] = ApplicationStateValue(TealType.bytes)
     asset: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
+    fee_holder: Final[ApplicationStateValue] = ApplicationStateValue(TealType.bytes)
     
     state: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
     action_count: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
@@ -40,11 +38,12 @@ class SaMurra(Application):
     player_score: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     
     @create
-    def create(self, asset: abi.Asset):
+    def create(self, asset: abi.Asset, fee_holder: abi.Account):
         return Seq(
             self.state.set(INIT),
             self.action_count.set(Int(0)),
-            self.asset.set(asset.asset_id())
+            self.asset.set(asset.asset_id()),
+            self.fee_holder.set(fee_holder.address()),
         )
         
     @external
@@ -108,7 +107,7 @@ class SaMurra(Application):
                 Txn.sender() == Global.creator_address(),
                 self.state.get() == WAIT,
             ),
-            self.empty_account_caller()
+            self.empty_account_caller(Int(0))
         )
 
     @external
@@ -134,7 +133,6 @@ class SaMurra(Application):
     
     @external
     def reveal(self, reveal: abi.String, other: abi.Account):
-
         return Seq(
             Assert(
                 App.optedIn(Txn.sender(), Global.current_application_id()),
@@ -144,11 +142,13 @@ class SaMurra(Application):
                 If(Txn.sender() == Global.creator_address()).Then(other.address() == self.challenger.get()).Else(other.address() == Global.creator_address())
             ),
             
+            self.player_state.set(REVEAL),
+            
             self.player_hand.set(JsonRef.as_string(reveal.get(), Bytes("hand"))),
             Assert(Or(
                     self.player_hand.get() == ROCK,
                     self.player_hand.get() == PAPER,
-                    self.player_hand.get() == SCISSOR
+                    self.player_hand.get() == SCISSORS
                 )
             ),
             
@@ -157,20 +157,20 @@ class SaMurra(Application):
 
                 If(Or(  
                         And(self.player_hand.get() == ROCK,
-                            self.player_hand[other.address()].get() == SCISSOR),
-                        And(self.player_hand.get() == SCISSOR,
+                            self.player_hand[other.address()].get() == SCISSORS),
+                        And(self.player_hand.get() == SCISSORS,
                             self.player_hand[other.address()].get() == PAPER),
                         And(self.player_hand.get() == PAPER,
                             self.player_hand[other.address()].get() == ROCK))).Then(
                     self.player_score.set(self.player_score.get() + Int(1))
                 ).ElseIf(Or(
-                        And(self.player_hand.get() == SCISSOR,
+                        And(self.player_hand.get() == SCISSORS,
                             self.player_hand[other.address()].get() == ROCK),
                         And(self.player_hand.get() == PAPER,
-                            self.player_hand[other.address()].get() == SCISSOR),
+                            self.player_hand[other.address()].get() == SCISSORS),
                         And(self.player_hand.get() == ROCK,
                             self.player_hand[other.address()].get() == PAPER))).Then(
-                    self.player_score[other.address()].set(self.player_score.get() + Int(1))
+                    self.player_score[other.address()].set(self.player_score[other.address()].get() + Int(1))
                 ),
                 
                 If(self.player_score.get() >= WINNING_SCORE).Then(Seq(
@@ -194,7 +194,7 @@ class SaMurra(Application):
             Assert(
                 self.winner.get() == Txn.sender()
             ),
-            self.empty_account_caller()
+            self.empty_account_caller(Int(1))
         )
 
     @external
@@ -214,10 +214,19 @@ class SaMurra(Application):
             self.winner.set(Txn.sender())
         )
         
-    @internal
-    def empty_account_caller(self):
+    @internal(TealType.none)
+    def empty_account_caller(self, fee):
         return Seq(
             InnerTxnBuilder.Begin(),
+            If(fee).Then(Seq(
+                InnerTxnBuilder.SetFields({
+                    TxnField.type_enum: TxnType.AssetTransfer,
+                    TxnField.xfer_asset: self.asset.get(),
+                    TxnField.asset_amount: self.stake.get()/Int(100//2),
+                    TxnField.asset_receiver: self.fee_holder.get(),
+                }),
+                InnerTxnBuilder.Next(),
+            )),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
                 TxnField.xfer_asset: self.asset.get(),
@@ -243,7 +252,7 @@ class SaMurra(Application):
             )
     
     @delete
-    def delete(self, asset: abi.Asset, creator: abi.Account):
+    def delete(self, asset: abi.Asset, creator: abi.Account, fee_holder: abi.Account):
         return If(self.state.get() == FINISH).Then(
                 self.finish()
             ).ElseIf(self.state.get() == WAIT).Then(
@@ -253,5 +262,5 @@ class SaMurra(Application):
             )
         
 from base64 import b64decode
-approval_binary = b64decode(client.compile(SaMurra().approval_program)["result"])
-clear_binary = b64decode(client.compile(SaMurra().clear_program)["result"])
+approval_binary = b64decode(client.compile(RPS().approval_program)["result"])
+clear_binary = b64decode(client.compile(RPS().clear_program)["result"])

@@ -6,6 +6,7 @@ from hashlib import sha256
 from src.algogames.beaker2 import call_nosend, create_nosend, opt_in_nosend, finalize
 from src.algogames.morra.morra import SaMurra
 from src.algogames.game_platform.game_platform import GamePlatform
+from src.algogames.config import fee_holder
 import pytest
 
 from src.algogames.algorand import Account, client, sp, funder
@@ -65,6 +66,24 @@ def cant(f):
     with pytest.raises(Exception): f()
 
 
+def test_buy_sell_asset():
+    xavier, alice = init_env(2)
+    
+    # Create platform    
+    xavier_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=xavier.acc)
+    app_id_platform, app_acc_platform, _ = xavier_appclient_platform.create()
+    res = xavier_appclient_platform.call(GamePlatform.init, xavier.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(xavier.pk, sp, app_acc_platform, 210000), signer=xavier.acc))
+    asset = res.tx_info["inner-txns"][0]["asset-index"]
+    
+    # Opt into platform
+    alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
+    alice_appclient_platform.opt_in(alice.pk, username="alice")
+    
+    # Buy some berluscoin
+    opt_in_asset(alice, asset)
+    alice_appclient_platform.call(GamePlatform.buy, alice.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc_platform, 3), signer=alice.acc))
+    alice_appclient_platform.call(GamePlatform.sell, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc_platform, 3, asset), signer=alice.acc))
+        
 def test_morra_win_alice():
     xavier, alice, bob = init_env(3)
     
@@ -83,12 +102,15 @@ def test_morra_win_alice():
     # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
         opt_in_asset(acc, asset)
-        acc_appclient_platform.call(GamePlatform.swap, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
+        acc_appclient_platform.call(GamePlatform.buy, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
         
     # Create new morra game
     alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
-    finalize(alice_appclient_platform, call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, 
-        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset)))
+    tx = call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, game="morra", 
+        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset, fee_holder=fee_holder.pk))
+    print([y.txn.__dict__ for y in tx.build_group()])
+    finalize(alice_appclient_platform, tx)
+
     app_id_morra = alice_appclient_platform.get_account_state()["current_game"]
     app_acc_morra = algosdk.logic.get_application_address(app_id_morra)
     
@@ -118,7 +140,7 @@ def test_morra_win_alice():
 
     # Win    
     alice_appclient_platform.call(GamePlatform.win_game, alice.pk, challenger=bob.pk, app=app_id_morra)
-    alice_appclient_morra.delete(alice.pk, asset=asset, creator=alice.pk)
+    alice_appclient_morra.delete(alice.pk, asset=asset, creator=alice.pk, fee_holder=fee_holder.pk)
 
 def tesasdt_morra_win_bob():
     xavier, alice, bob = init_env(3)
@@ -138,12 +160,12 @@ def tesasdt_morra_win_bob():
     # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
         opt_in_asset(acc, asset)
-        acc_appclient_platform.call(GamePlatform.swap, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
+        acc_appclient_platform.call(GamePlatform.buy, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
         
     # Create new morra game
     alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
-    finalize(alice_appclient_platform,call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, 
-        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset)))
+    finalize(alice_appclient_platform, call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, game="morra", 
+        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset, fee_holder=fee_holder.pk)))
     app_id_morra = alice_appclient_platform.get_account_state()["current_game"]
     app_acc_morra = algosdk.logic.get_application_address(app_id_morra)
     
@@ -193,12 +215,12 @@ def tesasdt_morra_forfeit_bob():
     # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
         opt_in_asset(acc, asset)
-        acc_appclient_platform.call(GamePlatform.swap, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
+        acc_appclient_platform.call(GamePlatform.buy, acc.pk, asset=asset, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(acc.pk, sp, app_acc_platform, 3), signer=acc.acc))
         
     # Create new morra game
     alice_appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=alice.acc)
-    finalize(alice_appclient_platform,call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, 
-        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset)))
+    finalize(alice_appclient_platform, call_nosend(alice_appclient_platform, GamePlatform.new_game, alice.pk, game="morra", 
+        txn=create_nosend(alice_appclient_morra, alice.pk, asset=asset, fee_holder=fee_holder.pk)))
     app_id_morra = alice_appclient_platform.get_account_state()["current_game"]
     app_acc_morra = algosdk.logic.get_application_address(app_id_morra)
     
