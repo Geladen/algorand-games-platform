@@ -76,9 +76,9 @@ def test_morra_win_alice():
     
     # Opt into platform
     alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
-    alice_appclient_platform.opt_in(alice.pk)
+    alice_appclient_platform.opt_in(alice.pk, username="alice")
     bob_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=bob.acc, app_id=app_id_platform)
-    bob_appclient_platform.opt_in(bob.pk)
+    bob_appclient_platform.opt_in(bob.pk, username="bob")
     
     # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
@@ -117,7 +117,7 @@ def test_morra_win_alice():
     alice_appclient_morra.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 5, "hand": 1, "nonce": 1462867421}))
 
     # Win    
-    alice_appclient_platform.call(GamePlatform.win_game, alice.pk, app=app_id_morra)
+    alice_appclient_platform.call(GamePlatform.win_game, alice.pk, challenger=bob.pk, app=app_id_morra)
     alice_appclient_morra.delete(alice.pk, asset=asset, creator=alice.pk)
 
 def tesasdt_morra_win_bob():
@@ -131,9 +131,9 @@ def tesasdt_morra_win_bob():
     
     # Opt into platform
     alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
-    alice_appclient_platform.opt_in(alice.pk)
+    alice_appclient_platform.opt_in(alice.pk, username="alice")
     bob_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=bob.acc, app_id=app_id_platform)
-    bob_appclient_platform.opt_in(bob.pk)
+    bob_appclient_platform.opt_in(bob.pk, username="bob")
     
     # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
@@ -172,7 +172,7 @@ def tesasdt_morra_win_bob():
     alice_appclient_morra.call(SaMurra.reveal, alice.pk, other=algosdk.encoding.decode_address(bob.pk), reveal=json.dumps({"guess": 7, "hand": 1, "nonce": 1462867421}))
 
     # Win    
-    bob_appclient_platform.call(GamePlatform.win_game, bob.pk, app=app_id_morra)
+    bob_appclient_platform.call(GamePlatform.win_game, bob.pk, challenger=alice.pk, app=app_id_morra)
     bob_appclient_morra.delete(bob.pk, asset=asset, creator=alice.pk)
 
 def tesasdt_morra_forfeit_bob():
@@ -186,9 +186,9 @@ def tesasdt_morra_forfeit_bob():
     
     # Opt into platform
     alice_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=alice.acc, app_id=app_id_platform)
-    alice_appclient_platform.opt_in(alice.pk)
+    alice_appclient_platform.opt_in(alice.pk, username="alice")
     bob_appclient_platform = ApplicationClient(client=client, app=GamePlatform(), signer=bob.acc, app_id=app_id_platform)
-    bob_appclient_platform.opt_in(bob.pk)
+    bob_appclient_platform.opt_in(bob.pk, username="bob")
     
     # Buy some berluscoin
     for (acc, acc_appclient_platform) in [(alice, alice_appclient_platform), (bob, bob_appclient_platform)]:
@@ -226,5 +226,5 @@ def tesasdt_morra_forfeit_bob():
     bob_appclient_morra.call(SaMurra.forfeit, bob.pk)
 
     # Win    
-    bob_appclient_platform.call(GamePlatform.win_game, bob.pk, app=app_id_morra)
+    bob_appclient_platform.call(GamePlatform.win_game, bob.pk, challenger=alice.pk, app=app_id_morra)
     bob_appclient_morra.delete(bob.pk, asset=asset, creator=alice.pk)

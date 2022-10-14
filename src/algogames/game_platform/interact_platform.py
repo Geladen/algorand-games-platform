@@ -1,4 +1,6 @@
+from typing import Callable
 from beaker.client.application_client import ApplicationClient
+from utils import ask_number, ask_string, find_games, is_opted, menu_callback, try_get_platform, menu
 from config import player, platform_id, berluscoin_id
 from algorand import client, indexer
 from algosdk.future.transaction import wait_for_confirmation
@@ -7,6 +9,7 @@ import algosdk
 from game_platform.game_platform import GamePlatform
 from morra import interact_morra
 from base64 import b64encode
+import codecs
 
 def _create_platform():
     appclient = ApplicationClient(client, GamePlatform(), signer=player.acc)
@@ -18,33 +21,28 @@ def _create_platform():
     print(asset, appclient.app_id)
 
 def interact_platform():
-    while True:
-        print("\nChoose your action!")
-        print("1. Opt into platform")
-        print("2. Swap berluscoin")
-        print("3. Create game")
-        print("4. Join game")
-        print("5. Your profile")
-        print("0. Quit")
-        choice = int(input("> "))
-        if choice == 1:
-            interact_opt()
-        elif choice == 2:
-            interact_swap()
-        elif choice == 3:
-            interact_create()
-        elif choice == 4:
-            interact_join()
-        elif choice == 5:
-            interact_profile()
-        else:
-            break
+    cont = True
+    while cont:
+        current_game = try_get_platform("current_game")
+        username = try_get_platform("username")
+        if username is not None:
+            print(f"\nHi, {username}")
+        cont = menu_callback(f"Choose your action!", [
+            ("Opt into platform", interact_opt),
+            ("Swap berluscoin", interact_swap),
+            ("Create game", interact_create),
+            ("Join game", interact_join),
+            *([(f"Resume game {current_game}", lambda: interact_morra.interact_play(current_game))] if current_game else []),
+            ("Your profile", interact_profile),
+        ], quit_option=True, skip_line=False)
         
 def interact_opt():
     appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
-    if not(any(application['id'] == platform_id for application in client.account_info(player.pk)["apps-local-state"])):
+    
+    if not is_opted(player.pk, platform_id):
+        username = ask_string("Choose your username: ", lambda x: len(x) > 0)
         print("Joining the platform...", end=" ", flush=True)
-        appclient.opt_in(player.pk)
+        appclient.opt_in(player.pk, username=username)
         print("Done!")
     else:
         print("Platform already joined.")
@@ -53,7 +51,7 @@ def interact_swap():
     appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
     sp = client.suggested_params()
     
-    amt = int(input("\nHow many berluscoin do you want to buy? "))
+    amt = ask_number("How many berluscoin do you want to buy? ", [0, None])
     
     if amt > 0:
         if not(any(asset['asset-id'] == berluscoin_id for asset in client.account_info(player.pk)["assets"])):
@@ -66,40 +64,34 @@ def interact_swap():
         ))    
         print("Done!")
 
-def interact_create():
-    print("\nWhat game do you want to create?")
-    print("1. Sa murra")
-    choice = int(input("> ")) 
-    
-    if choice == 1:
-        app_id = interact_morra.interact_create()
+def interact_create_and_play(create: Callable[[], int], play: Callable[[int], None]):
+    app_id = create()
+    if app_id:
         print(f"Game {app_id} created!")
-        interact_morra.interact_play(app_id)
-    elif choice == 2:
-        pass
+        play(app_id)
+
+def interact_create():
+    menu_callback("What game do you want to create?", [
+        ("Sa murra", lambda: interact_create_and_play(interact_morra.interact_create, interact_morra.interact_play)),
+    ])
 
 def interact_join():
-    txns = indexer.search_transactions(application_id=platform_id, limit=500)['transactions']
-    games = {}
-    for txn in txns:
-        if 'local-state-delta' not in txn:
-            continue
-        deltas = [(ld['address'], ld['delta']) for ld in txn['local-state-delta']]
-        deltas = [(a,v) for a,d in deltas for v in d]
-        values = {(d['value']['uint'], a) for (a,d) in deltas if d['key'] == b64encode(b'current_game').decode() and d['value']['action'] == 2}
-        games.update(values)
-    games = [(g, games[g]) for g in sorted(list(set(games.keys())), reverse=True)]
-        
-    print("Choose your game:")
-    for i, (game, _acc) in enumerate(games):
-        print(f"{i+1}. {game}")
-    choice = int(input('> '))
+    games = find_games()
     
-    app_id, challenger = games[choice-1]
-    interact_morra.interact_join(challenger, app_id)
-    interact_morra.interact_play(app_id)
-
+    if len(games) > 0:
+        choice = menu("Choose your game:", [
+            f"{game[0]} ({game[1]['game']}, vs {game[1]['user']})"
+            for game in games
+        ])
+        
+        app_id, details = games[choice-1]
+        joined = interact_morra.interact_join(details["addr"], app_id)
+        if joined:
+            interact_morra.interact_play(app_id)
+    else:
+        print("No games, why don't you create one?")
+        
 def interact_profile():
-    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=platform_id)
-    puntazzi = appclient.get_account_state()['puntazzi']
+    puntazzi = try_get_platform("puntazzi") 
+    puntazzi = 0 if puntazzi is None else puntazzi
     print(f"Your puntazzi: {puntazzi}")
