@@ -1,7 +1,7 @@
 from typing import Callable
 from beaker.client.application_client import ApplicationClient
 from utils import ask_choice, ask_number, ask_string, find_games, is_opted, menu_callback, try_get_local, menu
-from config import player, platform_id, berluscoin_id
+from config import player, platform_id, berluscoin_id, fee_holder
 from algorand import client, indexer
 from algosdk.future.transaction import wait_for_confirmation
 from algosdk.atomic_transaction_composer import TransactionWithSigner
@@ -24,6 +24,9 @@ def _create_platform():
     global platform_id, berluscoin_id
     berluscoin_id = asset
     platform_id = appclient.app_id
+    
+    wait_for_confirmation(client, client.send_transaction(algosdk.future.transaction.AssetTransferTxn(fee_holder.pk, sp, fee_holder.pk, 0, berluscoin_id).sign(fee_holder.sk)), 4)
+    
     
 def interact_platform():
     cont = True
