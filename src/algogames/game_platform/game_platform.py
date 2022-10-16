@@ -3,16 +3,15 @@ from pyteal import *
 from beaker import *
 from rps.rps import approval_binary as rps_ab, clear_binary as rps_cb
 from morra.morra import approval_binary as morra_ab, clear_binary as morra_cb
-from config import fee_holder
 import algosdk
 
 
 min_stake = 100
 MIN_STAKE = Int(min_stake)
-FEE_HOLDER = Bytes(algosdk.encoding.decode_address(fee_holder.pk))
 
 class GamePlatform(Application):
     berluscoin: Final[ApplicationStateValue] = ApplicationStateValue(TealType.uint64)
+    fee_holder: Final[ApplicationStateValue] = ApplicationStateValue(TealType.bytes)
 
     username: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     current_game: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
@@ -21,8 +20,10 @@ class GamePlatform(Application):
     puntazzi: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
 
     @create
-    def create(self):
-        return Seq()
+    def create(self, fee_holder: abi.Account):
+        return Seq(
+            self.fee_holder.set(fee_holder.address())
+        )
         
     @external
     def init(self, txn: abi.PaymentTransaction):
@@ -97,7 +98,7 @@ class GamePlatform(Application):
                     App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value)  == Int(100)
                 ),
                 And(
-                    App.globalGetEx(txn.get().application_id(), Bytes("fee_holder")).outputReducer(lambda value, _: value) == FEE_HOLDER,
+                    App.globalGetEx(txn.get().application_id(), Bytes("fee_holder")).outputReducer(lambda value, _: value) == self.fee_holder.get(),
                     App.globalGetEx(txn.get().application_id(), Bytes("asset")).outputReducer(lambda value, _: value),
                     Or(
                         And(

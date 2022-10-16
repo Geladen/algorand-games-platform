@@ -15,7 +15,7 @@ def _create_platform():
     appclient = ApplicationClient(client, GamePlatform(), signer=player.acc)
     sp = client.suggested_params()
     
-    appclient.create()
+    appclient.create(fee_holder=fee_holder.pk)
     res = appclient.call(GamePlatform.init, player.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(player.pk, sp, appclient.app_addr, 210000), signer=player.acc))
     asset = res.tx_info["inner-txns"][0]["asset-index"]
     
