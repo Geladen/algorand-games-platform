@@ -36,6 +36,7 @@ class RPS(Application):
     player_commit: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     player_hand: Final[AccountStateValue] = AccountStateValue(TealType.bytes)
     player_score: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
+    fee_amount: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     
     @create
     def create(self, asset: abi.Asset, fee_holder: abi.Account):
@@ -43,7 +44,7 @@ class RPS(Application):
             self.state.set(INIT),
             self.action_count.set(Int(0)),
             self.asset.set(asset.asset_id()),
-            self.fee_holder.set(fee_holder.address()),
+            self.fee_holder.set(fee_holder.address())
         )
         
     @external
@@ -67,7 +68,7 @@ class RPS(Application):
         )
         
     @internal
-    def define_stake(self, txn: abi.AssetTransferTransaction):
+    def define_stake(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
         return Seq(
             Assert(
                 Txn.sender() == Global.creator_address(),
@@ -78,12 +79,13 @@ class RPS(Application):
             ),
             
             self.stake.set(txn.get().asset_amount()),
+            self.fee_amount.set(fee_amount.get()),
 
             self.state.set(WAIT),
         )        
         
     @internal
-    def join(self, txn: abi.AssetTransferTransaction):
+    def join(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
         return Seq(
             Assert(
                 self.state.get() == WAIT,
@@ -92,11 +94,12 @@ class RPS(Application):
                 
                 txn.get().xfer_asset() == self.asset.get(),
                 txn.get().asset_receiver() == Global.current_application_address(),
-                txn.get().asset_amount() == self.stake.get(),
+                txn.get().asset_amount() == self.stake.get()
             ),
             
             self.challenger.set(Txn.sender()),  
             self.action_timer.set(Global.round()), 
+            self.fee_amount.set(fee_amount.get()),
             self.state.set(COMMIT)   
         )
 
@@ -222,7 +225,7 @@ class RPS(Application):
                 InnerTxnBuilder.SetFields({
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: self.asset.get(),
-                    TxnField.asset_amount: self.stake.get()/Int(100//2),
+                    TxnField.asset_amount: self.stake.get() / self.fee_amount.get(),
                     TxnField.asset_receiver: self.fee_holder.get(),
                 }),
                 InnerTxnBuilder.Next(),
@@ -242,11 +245,11 @@ class RPS(Application):
 
         
     @opt_in
-    def opt_in(self, txn: abi.AssetTransferTransaction):
+    def opt_in(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
         return If(self.state.get() == POOR).Then(
-                self.define_stake(txn)
+                self.define_stake(txn, fee_amount)
             ).ElseIf(self.state.get() == WAIT).Then(
-                self.join(txn)
+                self.join(txn, fee_amount)
             ).Else(
                 Err()
             )

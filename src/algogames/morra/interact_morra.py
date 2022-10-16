@@ -2,8 +2,8 @@ from hashlib import sha256
 import json
 import random
 from beaker.client.application_client import ApplicationClient
-from utils import ask_choice, ask_number, ask_choice, try_get_global, trysend
-from game_platform.game_platform import GamePlatform
+from utils import ask_choice, ask_number, ask_choice, try_get_global, trysend, try_get_local
+from game_platform.game_platform import GamePlatform, min_stake
 from algorand import client
 from morra.morra import SaMurra, action_timeout
 from beaker2 import create_nosend, call_nosend, opt_in_nosend, finalize
@@ -19,20 +19,32 @@ def interact_create():
     
     sp = client.suggested_params()
     
+    puntazzi = try_get_local("puntazzi", platform_id)
+        
+    if puntazzi <= 5000000:
+        fee_amount = 20
+    elif puntazzi <= 25000000:
+        fee_amount = 33
+    elif puntazzi <= 500000000:
+        fee_amount = 50
+    else:
+        fee_amount = 100
+
     try:
         print("Creating morra game...", end=" ", flush=True)
         appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=player.acc)
-        finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="morra", txn=create_nosend(appclient_morra, player.pk, asset=berluscoin_id, fee_holder=fee_holder.pk)))
-        app_id_morra = appclient_platform.get_account_state()["current_game"]
+
+        app_id_morra, _, _ = appclient_morra.create(player.pk, asset=berluscoin_id, fee_holder=fee_holder.pk)
     
         appclient_morra = ApplicationClient(client=client, app=SaMurra(), signer=player.acc, app_id=app_id_morra)
         print("Initializing game...", end=" ", flush=True)
+
         appclient_morra.call(SaMurra.init, player.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(player.pk, sp, appclient_morra.app_addr, 210000), signer=player.acc), asset=berluscoin_id)
         print("Done!")
     
-        stake = ask_number("How much do you want to stake?")    
+        stake = ask_number("How much do you want to stake?", range=[min_stake, None])    
         print("Sending stake...", end=" ", flush=True)
-        appclient_morra.opt_in(player.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc))
+        finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="morra", app=app_id_morra, txn=opt_in_nosend(appclient_morra, player.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc), fee_amount=fee_amount)))
         print("Done!")
     except (algosdk.error.AlgodHTTPError, beaker.client.logic_error.LogicException) as e:
         if ("underflow" in str(e)) or (f"asset {berluscoin_id} missing from" in str(e)):
@@ -56,6 +68,17 @@ def interact_join(challenger, app_id):
         print("Already joined.")
         return True
     
+    puntazzi = try_get_local("puntazzi", platform_id)
+    
+    if puntazzi <= 5000000:
+        fee_amount = 20
+    elif puntazzi <= 25000000:
+        fee_amount = 33
+    elif puntazzi <= 500000000:
+        fee_amount = 50
+    else:
+        fee_amount = 100
+
     try:
         sp = client.suggested_params()
         stake = try_get_global('stake', app_id)
@@ -63,12 +86,12 @@ def interact_join(challenger, app_id):
             print("Stake not yet defined.")
             return False
         choice = ask_choice(f"Stake is {stake}. Join?", ["y", "N"])
-        if choice == False:
+        if choice == "n":
             return False
         print("Joining game...", end=" ", flush=True)
-        finalize(appclient_morra, call_nosend(appclient_platform, GamePlatform.join_game, player.pk, challenger=challenger, 
+        finalize(appclient_morra, call_nosend(appclient_platform, GamePlatform.join_game, player.pk, challenger=challenger, app=app_id,
             txn=opt_in_nosend(appclient_morra, player.pk, 
-            txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc))))
+            txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc), fee_amount=fee_amount)))
         print("Done!")
         return True
     except (algosdk.error.AlgodHTTPError, beaker.client.logic_error.LogicException) as e:
@@ -171,7 +194,7 @@ def interact_play(app_id):
             print("Done!")
         elif global_state["state"] == 1:
             sp = client.suggested_params()
-            stake = ask_number("How much do you want to stake?")
+            stake = ask_number("How much do you want to stake?", range=[min_stake, None])
             print("Sending stake...", end=" ", flush=True)
             trysend(lambda: appclient_morra.opt_in(player.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_morra.app_addr, stake, berluscoin_id), signer=player.acc)))
             print("Done!")

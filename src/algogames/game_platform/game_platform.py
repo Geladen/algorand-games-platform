@@ -6,6 +6,9 @@ from morra.morra import approval_binary as morra_ab, clear_binary as morra_cb
 from config import fee_holder
 import algosdk
 
+
+min_stake = 100
+MIN_STAKE = Int(min_stake)
 FEE_HOLDER = Bytes(algosdk.encoding.decode_address(fee_holder.pk))
 
 class GamePlatform(Application):
@@ -77,37 +80,57 @@ class GamePlatform(Application):
     @opt_in
     def opt_in(self, username: abi.String):
         return Seq(
-            self.username.set(username.get())
+            self.username.set(username.get()),
+            self.puntazzi.set(Int(0))
         )
         
     @external
-    def new_game(self, game: abi.String, txn: abi.ApplicationCallTransaction):
+    def new_game(self, game: abi.String, txn: abi.ApplicationCallTransaction, app: abi.Application):
         return Seq(
-            Assert(And(
-                txn.get().accounts[1] == FEE_HOLDER,
-                txn.get().assets[0] == self.berluscoin.get(),
-                Or(
-                    And(
-                        game.get() == Bytes("morra"),
-                        txn.get().approval_program() == Bytes(morra_ab),
-                        txn.get().clear_state_program() == Bytes(morra_cb),
-                    ),
-                    And(
-                        game.get() == Bytes("rps"),
-                        txn.get().approval_program() == Bytes(rps_ab),
-                        txn.get().clear_state_program() == Bytes(rps_cb),
-                    ),
-                )
-            )),
-            self.current_game.set(GeneratedID(txn.index())),
+            Assert(If(self.puntazzi.get() <= Int(5000000)).Then( 
+                    App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value) == Int(20)
+                ).ElseIf(self.puntazzi.get() <= Int(25000000)).Then(
+                    App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value) == Int(33)
+                ).ElseIf(self.puntazzi.get() <= Int(500000000)).Then(
+                    App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value)  == Int(50)
+                ).Else(
+                    App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value)  == Int(100)
+                ),
+                And(
+                    App.globalGetEx(txn.get().application_id(), Bytes("fee_holder")).outputReducer(lambda value, _: value) == FEE_HOLDER,
+                    App.globalGetEx(txn.get().application_id(), Bytes("asset")).outputReducer(lambda value, _: value),
+                    Or(
+                        And(
+                            game.get() == Bytes("morra"),
+                            AppParam.approvalProgram(app.application_id()).outputReducer(lambda value, _: value) == Bytes(morra_ab),
+                            AppParam.clearStateProgram(app.application_id()).outputReducer(lambda value, _: value) == Bytes(morra_cb),
+                        ),
+                        And(
+                            game.get() == Bytes("rps"),
+                            AppParam.approvalProgram(app.application_id()).outputReducer(lambda value, _: value) == Bytes(rps_ab),
+                            AppParam.clearStateProgram(app.application_id()).outputReducer(lambda value, _: value) == Bytes(rps_cb),
+                        ),
+                    )
+                ),
+                App.globalGetEx(txn.get().application_id(), Bytes("stake")).outputReducer(lambda value, _: value) >= MIN_STAKE
+            ),
+            self.current_game.set(txn.get().application_id()),
             self.game_time.set(Global.latest_timestamp()),
             self.game_type.set(game.get())
         )
 
     @external
-    def join_game(self, challenger: abi.Account, txn: abi.ApplicationCallTransaction):
+    def join_game(self, challenger: abi.Account, txn: abi.ApplicationCallTransaction, app: abi.Application):
         return Seq(
-            Assert(
+            Assert(If(self.puntazzi.get() <= Int(5000000)).Then( 
+                    App.localGetEx(challenger.address(), self.current_game[challenger.address()].get(), Bytes("fee_amount")).outputReducer(lambda value, _: value) == Int(20)
+                ).ElseIf(self.puntazzi.get() <= Int(15000000)).Then(
+                    App.localGetEx(challenger.address(), self.current_game[challenger.address()].get(), Bytes("fee_amount")).outputReducer(lambda value, _: value) == Int(33)
+                ).ElseIf(self.puntazzi.get() <= Int(50000000)).Then(
+                    App.localGetEx(challenger.address(), self.current_game[challenger.address()].get(), Bytes("fee_amount")).outputReducer(lambda value, _: value)  == Int(50)
+                ).ElseIf(self.puntazzi.get() <= Int(500000000)).Then(
+                    App.localGetEx(challenger.address(), self.current_game[challenger.address()].get(), Bytes("fee_amount")).outputReducer(lambda value, _: value)  == Int(100)
+                ),
                 txn.get().application_id() == self.current_game[challenger.address()].get(),
                 txn.get().on_completion() == OnComplete.OptIn,
             ),
@@ -126,5 +149,5 @@ class GamePlatform(Application):
             ),
             self.current_game.set(Int(0)),
             self.current_game[challenger.address()].set(Int(0)),
-            self.puntazzi.set(self.puntazzi.get() + Int(1)),
+            self.puntazzi.set(self.puntazzi.get() + App.globalGetEx(self.current_game.get(), Bytes("stake")).outputReducer(lambda value, _: value) / Int(100)),
         )

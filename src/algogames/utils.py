@@ -66,7 +66,7 @@ def ask_choice(query: str, choices=List[str], skip_line=True):
         pre = "\n" if first and skip_line else ""
         choice = input(f"{pre}{query} ({'/'.join(choices)}) ")
         first = False
-        if choice.lower() in choices:
+        if choice.lower() in [choice.lower() for choice in choices]:
             break
     return choice.lower()
 
