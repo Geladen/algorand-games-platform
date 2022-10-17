@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ```
 3. Interact with the platform:
 ```
-python src/algogames/main.py [id player]
+python src/algogames/main.py
 ```
 
 4. To run tests, it is also possible to run
@@ -36,7 +36,7 @@ Roadmap:
   3. Implement platform-game interaction
   4. Implement a second game (Rock-Paper-Scissors)
   6. Develop a loyalty system based on the earned points
-  7. Implement a second game (BlackJack)
+  7. Implement a third game (BlackJack)
 
 # Smart Contract Specifications
 
@@ -104,7 +104,18 @@ When the function is called for the second time it awards a point to the winner 
 
 `finish()` It can only be called by the winner, and has the aim of sending the SKULLs to the winner from whom a percentage of the fee is subtracted and sent to the address of the fee_holder
 
-**Blackjack:**
+## Blackjack
+
+The protocol for the blackjack game can be summarized as follows:
+
+1. The contract initializes an array of cards (implemented as a bytestring of 52 0s)
+2. Every time that the player wants someone to draw a card, they must provide a random number
+3. The bank provides a deterministic signature of this random number
+4. The contract calculates the signature modulo the number of cards remaining `i`, and picks the `i`-th non picked card from the array of cards
+5. After picking a card in position `i`, the `i`-th byte in the array of cards is set to 1 if the card was picked by the player, and 2 if it was picked by the bank.
+
+Note that the first two cards are given to the user, and the third card is given to the bank. At this point the player can pick cards until he reaches 21 or busts, and after that, the cards are given to the bank. Note that the user has no way to predict what card will be chosen (as they do not know the private key of the bank), and the bank has no way to influence what card will be chosen, as they must provide a (deterministic) signature of the data provided by the user. 
+
 
 `create(asset, bank, fee_holder)` This function can only be called by the game creator to create the contract. Requires to specify the game asset, the fee_hoolder to which the fees of any winnings will go and the address of the bank which will be saved in the contract status
 
@@ -112,15 +123,15 @@ When the function is called for the second time it awards a point to the winner 
 
 `distribute_req(req)` Is called by the player to continue the initial distribution of the cards. The first two cards will be given to the user; the third one will be given to the bank. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
 
-`hit_act(sig)` Is called by the bank to give a card to the player. Can be called only after a hit_req. To be called, the bank must sign the request made in the `hit_req` function.
+`hit_act(sig)` Is called by the bank to give a card to the player. Can be called only after a hit_req. To be called, the bank must sign the request made in the `hit_req` function. This signature will be used to decide on what car will be picked. 
 
 `hit_req(req)` Is called by the player to draw a card. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
 
-`hit_act(sig)` Is called by the bank to give a card to the player. Can be called only after a hit_req. To be called, the bank must sign the request made in the `hit_req` function.
+`hit_act(sig)` Is called by the bank to give a card to the player. Can be called only after a hit_req. To be called, the bank must sign the request made in the `hit_req` function. This signature will be used to decide on what car will be picked.
 
 `stand_req(req)` Is called by the player to let the bank draw a card. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
 
-`stand_act(sig)` Is called by the bank to give a card to himself. Can be called only after a stand_req. To be called, the bank must sign the request made in the `stand_req` function.
+`stand_act(sig)` Is called by the bank to give a card to himself. Can be called only after a stand_req. To be called, the bank must sign the request made in the `stand_req` function. This signature will be used to decide on what car will be picked. 
 
 `forfeit()` It can be called by both the player and the bank, as a guarantee in case the opponent does not want to reveal their choice or stops playing. The function checks that 10 rounds have passed since the last state change and if so if the opponent has not interacted for the last 10 rounds then the caller of the function is set as the winner in the contract state
 
