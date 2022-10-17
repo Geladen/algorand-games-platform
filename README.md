@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ```
 3. Interact with the platform:
 ```
-python src/algogames/main.py
+python src/algogames/main.py [id player]
 ```
 
 4. To run tests, it is also possible to run
@@ -36,7 +36,7 @@ Roadmap:
   3. Implement platform-game interaction
   4. Implement a second game (Rock-Paper-Scissors)
   6. Develop a loyalty system based on the earned points
-  7. Implement a third game (BlackJack)
+  7. Implement a second game (BlackJack)
 
 # Smart Contract Specifications
 
@@ -93,7 +93,7 @@ In the morra contract the JSON has this format: `{"guess": guess, "hand": hand, 
 In the Rock-Paper-Scissors contract the JSON has this format: `{"hand": hand, "nonce": nonce}`.
 The random nonce has the purpose of guaranteeing the secrecy of the commit avoiding brute force attacks.
 
-`reveal(reveal, other)` This function must be called by both players to reveal their move. The player when calling the function must provide as a parameter a reveal that corresponds to the JSON on which he has calculated the hash function SHA256 sent previously. The function will check that the hash of the JSON is the same as the one provided during the commit phase, if so it will also check that it respects the rules of the game, i.e. that 0 <= hand <= 5 and 0 <= guess <= 10. 
+`reveal(reveal, other)` This function must be called by both players to reveal their move. The player when calling the function must provide as a parameter a reveal that corresponds to the JSON on which he has calculated the hash function SHA256 sent previously. The function will check that the hash of the JSON is the same as the one provided during the commit phase, if so it will also check that it respects the rules of the game, i.e. that 0 <= hand <= 5 and 0 <= guess <= 10 in the case of morra, and hand == "rock", "paper", or "scissors" in the case of rps. 
 When the function is called for the second time it awards a point to the winner in the contract status and in case he has reached the two points it marks him as the winner of the match.
 
 `forfeit()` It can be called by both players, as a guarantee in case the opponent does not want to reveal their choice or stops playing. The function checks that 10 rounds have passed since the last state change and if so if the opponent has not interacted for the last 10 rounds then the caller of the function is set as the winner in the contract state
@@ -119,7 +119,7 @@ Note that the first two cards are given to the user, and the third card is given
 
 `create(asset, bank, fee_holder)` This function can only be called by the game creator to create the contract. Requires to specify the game asset, the fee_hoolder to which the fees of any winnings will go and the address of the bank which will be saved in the contract status
 
-`init` Must be called by the contract creator to initialize the application, must receive a transaction in which the contract creation fees are paid
+`init()` Must be called by the contract creator to initialize the application, must receive a transaction in which the contract creation fees are paid
 
 `distribute_req(req)` Is called by the player to continue the initial distribution of the cards. The first two cards will be given to the user; the third one will be given to the bank. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
 
@@ -142,7 +142,7 @@ Note that the first two cards are given to the user, and the third card is given
 
 # State of the Art
 
-We have not found many projects similar to ours in the aAlgorand ecosystem, we report below the main platforms / implementations:
+We have not found many projects similar to ours in the Algorand ecosystem, we report below the main platforms / implementations:
 Algo-Casino is a platform that brings classic casino games of poker, blackjack and others to the algorithm ecosystem. To play it is necessary to have the CHIP asset. In addition to the classic games it also offers a DEFI service.
 
 Regarding implementations similar to ours, this [article](https://developer.algorand.org/solutions/morra-game-using-reach/) explains an implementation of morra. As in our case the game is implemented for 2 players in 1v1 games. The main difference is the programming language with which it was developed: Reach. Using pyteal and Beaker we believe that development has been facilitated by familiarity with python and the result is more understandable code with the same functionality.
