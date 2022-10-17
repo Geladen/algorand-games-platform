@@ -15,7 +15,7 @@ Project for International School on Algorand Smart Contracts.
 ```
 pip install -r requirements.txt
 ```
-3. Interact with the platform: (player_id can be set to 1 or 2 to choose a different account)
+3. Interact with the platform (player_id can be set to 1 or 2 to choose a different account):
 ```
 python src/algogames/main.py [player_id]
 ```
