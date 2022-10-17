@@ -71,6 +71,9 @@ When the function is called for the second time it awards a point to the winner 
 The most important time implementation is this [https://developer.algorand.org/solutions/morra-game-using-reach/](https://developer.algorand.org/solutions/morra-game-using-reach/) in Reach. We will develop it using Beaker to observe the differences. 
 
 # Technical Challenges
+
 In our development of this project we encountered numerous problems with the Beaker framework. 
+
 The game platform, in multiple cases, requires the user to pass an application call when calling a method of the contract. This application call itself, often takes as parameters additional transactions. To our knowledge, the Beaker framework does not allow the use of its ApplicationClient methods to construct application calls that must be passed as parameters to other application calls. We therefore extended the beaker library (although in a hacky fashion to not slow down development) to support these use cases, adding a `nosend` version of the corresponding `create`, `call`, `opt-in` and `delete` calls, together with a `finalize` function to submit the created application calls.
+
 Furthermore, we found out (by trial error, as the documentation is still very partial) that it is not possible to have more than one `opt_in`/`delete` method per contract. Although this seems like a design decision, we found this limit overly restrictive, and we think that it has impacted the tidiness of our implementation. 
