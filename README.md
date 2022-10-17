@@ -109,15 +109,24 @@ When the function is called for the second time it awards a point to the winner 
 
 `init` Must be called by the contract creator to initialize the application, must receive a transaction in which the contract creation fees are paid
 
-`distribute req`
-`distribute act`
-`hit req`
-`hit act`
-`stand req`
-`stand act`
-`forfeit`
-`optin`
-`delete`
+`distribute_req(req)` Is called by the player to continue the initial distribution of the cards. The first two cards will be given to the user; the third one will be given to the bank. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
+
+`hit_act(sig)` Is called by the bank to give a card to the player. Can be called only after a hit_req. To be called, the bank must sign the request made in the `hit_req` function.
+
+`hit_req(req)` Is called by the player to draw a card. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
+
+`hit_act(sig)` Is called by the bank to give a card to the player. Can be called only after a hit_req. To be called, the bank must sign the request made in the `hit_req` function.
+
+`stand_req(req)` Is called by the player to let the bank draw a card. The user supplies a request of the form of a JSON with the format `{"nonce": nonce, "nonce_p": nonce_p, "app": app}`, where `nonce` is an increasing number, `app` is the id of the application, and `nonce_p` is a random number chosen by the player.
+
+`stand_act(sig)` Is called by the bank to give a card to himself. Can be called only after a stand_req. To be called, the bank must sign the request made in the `stand_req` function.
+
+`forfeit()` It can be called by both the player and the bank, as a guarantee in case the opponent does not want to reveal their choice or stops playing. The function checks that 10 rounds have passed since the last state change and if so if the opponent has not interacted for the last 10 rounds then the caller of the function is set as the winner in the contract state
+
+`opt_in(txn, fee_amount)` This function must be called by the player and the bank to opt in to the contract. Based on the state of the contract it routes between the internal functions: join_server and define_stake
+
+`delete(asset, creator, fee_holder)` This function must be called by the player or the bank to delete the contract. Based on the state of the contract it routes between the internal functions: cancel, finish and give_funds_back
+
 
 # State of the Art
 
