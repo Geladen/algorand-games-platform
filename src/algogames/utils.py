@@ -1,3 +1,4 @@
+import json
 from typing import Callable, List, Tuple
 from algorand import client, indexer
 from config import platform_id, player, skull_id
@@ -160,3 +161,23 @@ def menu_callback(query: str, options: List[Tuple[str, Callable[[], None]]], qui
         options[choice-1][1]()
         return True
     
+def store_secret(s, app, user):
+    app = str(app)
+    with open("src/algogames/secrets.json", "r") as f:
+        secrets = json.load(f)
+    if app not in secrets:
+        secrets[app] = {}
+    secrets[app][user] = s
+    with open("src/algogames/secrets.json", "w") as f:
+        json.dump(secrets, f)
+    
+    
+def fetch_secret(app, user):
+    app = str(app)
+    with open("src/algogames/secrets.json", "r") as f:
+        secrets = json.load(f)
+    if app not in secrets:
+        return None
+    if user not in secrets[app]:
+        return None
+    return secrets[app][user]

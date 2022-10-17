@@ -195,7 +195,6 @@ class RPS(Application):
             
             If(self.action_count.get() == Int(1)).Then(Seq(
                 self.action_count.set(Int(0)),
-
                 If(Or(  
                         And(self.player_hand.get() == ROCK,
                             self.player_hand[other.address()].get() == SCISSORS),

@@ -7,7 +7,7 @@ from beaker2 import call_nosend, opt_in_nosend, finalize
 from time import sleep
 from utils import ask_number, ask_string, is_opted, try_get_creator, try_get_global, trysend, try_get_local
 from game_platform.game_platform import GamePlatform, get_fee, min_stake
-from algorand import client
+from algorand import Account, client
 from blackjack.blackjack import Blackjack, action_timeout, state_init, state_poor, state_wait, state_player, state_hit_act, state_bank, state_stand_act, state_finish, state_push, state_distribute, state_distribute_act
 from algosdk.atomic_transaction_composer import TransactionWithSigner
 from config import player, skull_id, platform_id, fee_holder
@@ -35,11 +35,16 @@ def interact_blackjack(app_id=0):
         puntazzi = try_get_local("puntazzi", appclient_platform.app_id)
         creator = try_get_creator(appclient_blackjack.app_id)
         winner, action_timer, global_state, nonce, bank, last_card, cards = try_get_global(["winner", "action_timer", "state", "nonce", "bank", "last_card", "cards"], appclient_blackjack.app_id)
-        server_blackjack.interact_blackjack(appclient_blackjack.app_id)
-        
+        bank = algosdk.encoding.encode_address(codecs.decode(bank.encode(), "hex")) if bank is not None else None
+        if  revealed and (global_state == state_player or global_state == state_bank or global_state == state_distribute or global_state == state_finish or global_state == state_push):
+            revealed = False
+            print(f"Your hand: {', '.join(map(get_card_value, get_cards(cards, 1)))}")
+            print(f"Bank hand: {', '.join(map(get_card_value, get_cards(cards, 2)))}")
+            
         if appclient_blackjack.app_id == 0:
             print("Creating blackjack game...", end=" ", flush=True)
-            app_id, _, _ = trysend(lambda: appclient_blackjack.create(player.pk, asset=skull_id, fee_holder=fee_holder.pk, bank=fee_holder.pk))
+            bank = server_blackjack.create_account(player.pk)
+            app_id, _, _ = trysend(lambda: appclient_blackjack.create(player.pk, asset=skull_id, fee_holder=fee_holder.pk, bank=bank))
             print("Done!")
         elif global_state == state_init:
             print("Initializing game...", end=" ", flush=True)
@@ -58,10 +63,6 @@ def interact_blackjack(app_id=0):
         elif not is_opted(player.pk, appclient_blackjack.app_id):
             print("You are not playing this game.")
             return 
-        elif revealed and (global_state == state_player or global_state == state_bank or global_state == state_distribute):
-            revealed = False
-            print(f"Your hand: {', '.join(map(get_card_value, get_cards(cards, 1)))}")
-            print(f"Bank hand: {', '.join(map(get_card_value, get_cards(cards, 2)))}")
         elif global_state == state_player:
             choice = ask_string("Do you want to hit or stand? (hit/stand)", lambda x: x=='hit' or x=='stand')
             nonce_p = random.randint(0, 2**64-1)
@@ -89,9 +90,9 @@ def interact_blackjack(app_id=0):
         elif global_state == state_finish and winner == codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
             print("You won the game!")
             print("Registering win...", end=" ", flush=True)
-            trysend(lambda: appclient_platform.call(GamePlatform.win_game, player.pk, challenger=fee_holder.pk, app=appclient_blackjack.app_id))
+            trysend(lambda: appclient_platform.call(GamePlatform.win_game, player.pk, challenger=bank, app=appclient_blackjack.app_id))
             print("Getting money...", end=" ", flush=True)
-            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=fee_holder.pk, fee_holder=fee_holder.pk))
+            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=bank, fee_holder=fee_holder.pk))
             print("Done!")
             return
         elif global_state == state_finish and winner != codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
@@ -100,9 +101,15 @@ def interact_blackjack(app_id=0):
         elif global_state == state_push:
             print("Draw.")
             print("Getting money...", end=" ", flush=True)
-            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=fee_holder.pk, fee_holder=fee_holder.pk))
+            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=bank, fee_holder=fee_holder.pk))
             print("Done!")
             return
         else:
+            print(appclient_blackjack.get_application_state())
+            print(appclient_blackjack.get_account_state())
             print("NO ACTION")
             sleep(3)
+
+        # Function that mocks the interactions executed by the bank. In a real implementation, the user would not have access to this logic, 
+        # or more specifically, to the private key of the bank account.
+        server_blackjack.interact_blackjack(appclient_blackjack.app_id, player.pk)

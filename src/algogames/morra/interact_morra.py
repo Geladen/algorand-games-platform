@@ -11,7 +11,7 @@ from algorand import client
 from config import player, skull_id, platform_id, fee_holder
 from morra.morra import SaMurra, action_timeout, state_init, state_poor, state_wait, state_commit, state_reveal, state_finish
 from game_platform.game_platform import GamePlatform, get_fee, min_stake
-from utils import ask_choice, ask_number, ask_choice, is_opted, try_get_creator, try_get_global, trysend, try_get_local
+from utils import ask_choice, ask_number, ask_choice, fetch_secret, is_opted, store_secret, try_get_creator, try_get_global, trysend, try_get_local
 
 def interact_morra(app_id=0):
     appclient_platform = ApplicationClient(client=client, app=SaMurra(), app_id=platform_id, signer=player.acc)
@@ -30,6 +30,18 @@ def interact_morra(app_id=0):
             other = creator if challenger == player.pk else challenger
             other_hand, other_guess = try_get_local(["player_hand", "player_guess"], appclient_morra.app_id, other)
             
+        if revealed and global_state != state_reveal:
+            revealed = False
+            total = your_hand + other_hand
+            print(f"Your hand: {your_hand}, Challenger hand: {other_hand}, Total: {total}")
+            print(f"Your guess: {your_guess}, Challenger guess: {other_guess}")
+            if total == your_guess and total != other_guess:
+                print("You won the round!")
+            elif total != your_guess and total == other_guess:
+                print("Challenger won the round!")
+            else:
+                print("Draw")
+                
         if appclient_morra.app_id == 0:
             print("Creating morra game...", end=" ", flush=True)
             app_id, _, _ = trysend(lambda: appclient_morra.create(player.pk, asset=skull_id, fee_holder=fee_holder.pk))
@@ -64,23 +76,14 @@ def interact_morra(app_id=0):
         elif not is_opted(player.pk, appclient_morra.app_id):
             print("You are not playing this game.")
             return 
-        elif revealed and global_state != state_reveal:
-            revealed = False
-            total = your_hand + other_hand
-            print(f"Your hand: {your_hand}, Challenger hand: {other_hand}, Total: {total}")
-            print(f"Your guess: {your_guess}, Challenger guess: {other_guess}")
-            if total == your_guess and total != other_guess:
-                print("You won the round!")
-            elif total != your_guess and total == other_guess:
-                print("Challenger won the round!")
-            else:
-                print("Draw")
         elif global_state == state_commit and player_state != state_commit:
             hand = ask_number("What is your hand?")
             guess = ask_number("What is your guess?", skip_line=False)
             nonce = random.randint(0, 2**64-1)
+            secret = json.dumps({"guess": guess, "hand": hand, "nonce": nonce})
+            store_secret(secret, appclient_morra.app_id, player.pk)
             print("Sending commit...", end=" ", flush=True)
-            trysend(lambda: appclient_morra.call(SaMurra.commit, player.pk, commit=sha256(json.dumps({"guess": guess, "hand": hand, "nonce": nonce}).encode()).digest()))
+            trysend(lambda: appclient_morra.call(SaMurra.commit, player.pk, commit=sha256(secret.encode()).digest()))
             print("Done!")
         elif global_state == state_commit and player_state == state_commit:
             print("Waiting for other player to commit...")
@@ -91,8 +94,10 @@ def interact_morra(app_id=0):
             else:
                 sleep(3)
         elif global_state == state_reveal and player_state != state_reveal:
+            if "secret" not in vars() or secret is None:
+                secret = fetch_secret(appclient_morra.app_id, player.pk)
             print("Revealing your choice...", end=" ", flush=True)
-            trysend(lambda: appclient_morra.call(SaMurra.reveal, player.pk, other=other, reveal=json.dumps({"guess": guess, "hand": hand, "nonce": nonce})))
+            trysend(lambda: appclient_morra.call(SaMurra.reveal, player.pk, other=other, reveal=secret))
             print("Done!")
             revealed=True
         elif global_state == state_reveal and player_state == state_reveal:
@@ -103,6 +108,7 @@ def interact_morra(app_id=0):
                 print("Done!")
             else:
                 sleep(3)
+            revealed=True
         elif global_state == state_finish and winner == codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
             print("You won the game!")
             print("Registering win...", end=" ", flush=True)

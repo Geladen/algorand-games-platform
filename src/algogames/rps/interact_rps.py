@@ -11,7 +11,7 @@ from algorand import client
 from config import player, skull_id, platform_id, fee_holder
 from rps.rps import RPS, action_timeout, state_init, state_poor, state_wait, state_commit, state_reveal, state_finish
 from game_platform.game_platform import GamePlatform, get_fee, min_stake
-from utils import ask_choice, ask_number, ask_choice, ask_string, is_opted, try_get_creator, try_get_global, trysend, try_get_local
+from utils import ask_choice, ask_number, ask_choice, ask_string, fetch_secret, is_opted, store_secret, try_get_creator, try_get_global, trysend, try_get_local
 
 def interact_rps(app_id=0):
     appclient_platform = ApplicationClient(client=client, app=RPS(), app_id=platform_id, signer=player.acc)
@@ -29,7 +29,20 @@ def interact_rps(app_id=0):
             challenger = algosdk.encoding.encode_address(codecs.decode(challenger.encode(), 'hex'))
             other = creator if challenger == player.pk else challenger
             other_hand = try_get_local(["player_hand"], appclient_rps.app_id, other)
-            
+        if revealed and global_state != state_reveal:
+            revealed = False
+            print(f"Your hand: {your_hand}, Challenger hand: {other_hand}")
+            if ((your_hand == 'rock' and other_hand == 'scissors') 
+                or (your_hand == 'scissors' and other_hand == 'paper')
+                or (your_hand == 'paper' and other_hand == 'rock')):
+                print("You won the round!")
+            elif ((your_hand == 'scissors' and other_hand == 'rock') 
+                or (your_hand == 'paper' and other_hand == 'scissors')
+                or (your_hand == 'rock' and other_hand == 'paper')):
+                print("Challenger won the round!")
+            else:
+                print("Draw")
+                
         if appclient_rps.app_id == 0:
             print("Creating rps game...", end=" ", flush=True)
             app_id, _, _ = trysend(lambda: appclient_rps.create(player.pk, asset=skull_id, fee_holder=fee_holder.pk))
@@ -64,24 +77,13 @@ def interact_rps(app_id=0):
         elif not is_opted(player.pk, appclient_rps.app_id):
             print("You are not playing this game.")
             return 
-        elif revealed and global_state != state_reveal:
-            revealed = False
-            print(f"Your hand: {your_hand}, Challenger hand: {other_hand}")
-            if ((your_hand == 'rock' and other_hand == 'scissors') 
-                or (your_hand == 'scissors' and other_hand == 'paper')
-                or (your_hand == 'paper' and other_hand == 'rock')):
-                print("You won the round!")
-            elif ((your_hand == 'scissors' and other_hand == 'rock') 
-                or (your_hand == 'paper' and other_hand == 'scissors')
-                or (your_hand == 'rock' and other_hand == 'paper')):
-                print("Challenger won the round!")
-            else:
-                print("Draw")
         elif global_state == state_commit and player_state != state_commit:
             hand = ask_string("What do you play? (rock/paper/scissors)", lambda x: x=='rock' or x=='paper' or x=='scissors')
             nonce = random.randint(0, 2**64-1)
+            secret = json.dumps({"hand": hand, "nonce": nonce})
+            store_secret(secret, appclient_rps.app_id, player.pk)
             print("Sending commit...", end=" ", flush=True)
-            trysend(lambda: appclient_rps.call(RPS.commit, player.pk, commit=sha256(json.dumps({"hand": hand, "nonce": nonce}).encode()).digest()))
+            trysend(lambda: appclient_rps.call(RPS.commit, player.pk, commit=sha256(secret.encode()).digest()))
             print("Done!")
         elif global_state == state_commit and player_state == state_commit:
             print("Waiting for other player to commit...")
@@ -93,7 +95,9 @@ def interact_rps(app_id=0):
                 sleep(3)
         elif global_state == state_reveal and player_state != state_reveal:
             print("Revealing your choice...", end=" ", flush=True)
-            trysend(lambda: appclient_rps.call(RPS.reveal, player.pk, other=other, reveal=json.dumps({"hand": hand, "nonce": nonce})))
+            if "secret" not in vars() or secret is None:
+                secret = fetch_secret(appclient_rps.app_id, player.pk)
+            trysend(lambda: appclient_rps.call(RPS.reveal, player.pk, other=other, reveal=secret))
             print("Done!")
             revealed=True
         elif global_state == state_reveal and player_state == state_reveal:
@@ -104,6 +108,7 @@ def interact_rps(app_id=0):
                 print("Done!")
             else:
                 sleep(3)
+            revealed=True
         elif global_state == state_finish and winner == codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
             print("You won the game!")
             print("Registering win...", end=" ", flush=True)

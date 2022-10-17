@@ -43,7 +43,6 @@ class SaMurra(Application):
     player_score: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
     fee_amount: Final[AccountStateValue] = AccountStateValue(TealType.uint64)
 
-    
     @create
     def create(self, asset: abi.Asset, fee_holder: abi.Account):
         """
