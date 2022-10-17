@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python src/algogames/main.py [id player]
 ```
 
-To run tests, it is also possible to run
+4. To run tests, it is also possible to run
 ```
 bash test.sh
 ```
@@ -131,8 +131,10 @@ When the function is called for the second time it awards a point to the winner 
 
 # State of the Art
 
-The most important time implementation is this [https://developer.algorand.org/solutions/morra-game-using-reach/](https://developer.algorand.org/solutions/morra-game-using-reach/) in Reach. We will develop it using Beaker to observe the differences. 
+We have not found many projects similar to ours in the aAlgorand ecosystem, we report below the main platforms / implementations:
+Algo-Casino is a platform that brings classic casino games of poker, blackjack and others to the algorithm ecosystem. To play it is necessary to have the CHIP asset. In addition to the classic games it also offers a DEFI service.
 
+Regarding implementations similar to ours, this [article](https://developer.algorand.org/solutions/morra-game-using-reach/) explains an implementation of morra. As in our case the game is implemented for 2 players in 1v1 games. The main difference is the programming language with which it was developed: Reach. Using pyteal and Beaker we believe that development has been facilitated by familiarity with python and the result is more understandable code with the same functionality.
 
 
 # Technical Challenges
