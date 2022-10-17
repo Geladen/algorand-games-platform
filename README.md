@@ -41,7 +41,7 @@ Roadmap:
 
 # Smart Contract Specifications
 
-**Game Platform:**
+## Game Platform
 
 The owner of the platform creates the smart contract by deciding the address of the fee_holder to whom the fees that players will pay on wins will go. The platform creates an internal asset the Algorand Skull Coin with the maximum possible supply, and manages the basic functionality of exchanging Algos and SKULL with a ratio of 1 Algo = 1000000 SKULL. Furthermore, through the platform it is possible to create new games / participate in pre-established games. Based on the number and quantity of SKULLs won, players can get points called puntazzi, which through a step system allow you to obtain a reduction on the fees to be paid in case of victory in the games.
 
@@ -51,22 +51,23 @@ To start using the platform the only requirement is that the player has enough a
 
 `create(fee_holder)` This function is intended to create the contract. The creator of the platform specifies the address in which to deposit all earnings from fees
 
-`init(txn)` This function can only be called by the creator of the contract and is intended to initialize the platform. The creator must pay a transaction to pay the contract creation fees. The new SKULL asset is also created.
+`init(txn)` This function can only be called by the creator of the contract and is intended to initialize the platform. The creator must send a transaction to pay the minimum balance of the contract account. This operation also creates the new SKULL asset.
 
-`buy(txn, asset)` It aims to buy a quantity of assets specified in the transaction with which they are bought
+`buy(txn, asset)` Players can call this method to buy a quantity of SKULLs correspondent to the amount of ALGOs sent
 
-`sell(txn)` It aims to sell a specified amount of assets in the transaction with which they are sold
+`sell(txn)` Players can call this method to sell some SKULLs.
 
 `opt_in(username)` This function can be called by any user to opt-in to the platform, with a username it will be saved in the local state of the platform
 
-`new_game(game, txn, app)` This function allows the user to create a new batch and register it in the platform, to check that the game is valid verify that the bytes of the approval and of the clear program are correct
+`new_game(game, txn, app)` This function allows the user to create a new match and register it in the platform, to check that the game is valid it verifies that the bytes of the approval and of the clear program are correct, together with the parameters that the contract is using.
 
-`join_game(challenger, txn, app)` This feature allows a player to participate in a game as a challenger by checking that the game parameters provided in the transaction are correct, if so, set in the local state of the platform the match that matches that opponent.
+`join_game(challenger, txn, app)` This feature allows a player to participate in an existing game as a challenger.
 
-`win_game(challenger, app)` This function can only be called by the winner of a game, the function checks that the player is actually the winner of a valid partiota, if so, it increases the player's points according to the formula: **staked SKULLs / 100** saving them in the local state of the application 
+`win_game(challenger, app)` This function can only be called by the winner of a game, the function checks that the player is actually the winner of a valid game, if so, it increases the player's points according to the formula: **staked SKULLs / 100** saving them in the local state of the application 
 
 
-**Morra and Rock-Paper-Scissors:**
+## Morra and Rock-Paper-Scissors
+
 The two contracts are extremely similar, so they will be explained together highlighting the differences.
 
 The owner of the match creates the smart contract and decides the amount of SKULLs to bet. From now on, any other user can join the game until a challenger is found. The challenger will have to deposit the amount of SKULL decided by the creator. Now, each player has to choose a number from 0 to 5 which will represent the amount of fingers he decided to pick and a second number from the interval between 0 and 10 as his guess. Then each platyer have to send to the contract the digest obtained from the SHA256 hash function. The next phase is to reveal the players' plays, the players send their decisions as plain text on which the contract recalculates the digest of SHA256 to verify their correctness. Once the plays have been received, the contract will recognize the winning player and award him a point. The player who reaches 2 points first wins.
