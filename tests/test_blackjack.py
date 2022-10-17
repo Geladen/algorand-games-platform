@@ -3,10 +3,10 @@ from algosdk.atomic_transaction_composer import TransactionWithSigner
 from beaker.client.application_client import ApplicationClient
 import json
 from hashlib import sha256
-from src.algogames.blackjack.blackjack import Blackjack
+from src.algogames.blackjack.blackjack import Blackjack, state_push, state_finish
 import pytest
 from src.algogames.config import fee_holder
-
+import math
 from src.algogames.algorand import Account, client, sp, funder
 
 def create_asset(creator):
@@ -70,6 +70,23 @@ def init_env(n):
 def cant(f):
     with pytest.raises(Exception): f()
 
+def find_card_value(value, app, nonce, sk, bin, cards):
+    cards_left = len([c for c in cards if ord(c) == 0])
+    for nonce_p in range(2**10):
+        req = json.dumps({"nonce": nonce, "nonce_p": nonce_p, "app": app}).encode()
+        sig = algosdk.logic.teal_sign_from_program(sk, req, bin)
+        sigmod = int.from_bytes(sig, 'big', signed=False) % cards_left
+        i = 0
+        j = 0
+        while j <= sigmod:
+            if ord(cards[i]) == 0:
+                j += 1
+            i += 1
+        id = i-1
+        sig_value = min(id % 13 + 1, 10)
+        if sig_value == value:
+            return req
+        
 def test_blackjack_cancel():
     alice, bob, asset = init_env(2)
     
@@ -80,7 +97,7 @@ def test_blackjack_cancel():
     alice_appclient.opt_in(alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 100, asset), signer=alice.acc), fee_amount=20)
     alice_appclient.delete(alice.pk, asset=asset, other=bob.pk, fee_holder=bob.pk)
 
-def test_blackjack_succesful():
+def test_blackjack_win():
     alice, bob, asset = init_env(2)
         
     alice_appclient = ApplicationClient(client=client, app=Blackjack(), signer=alice.acc)
@@ -95,20 +112,217 @@ def test_blackjack_succesful():
     bob_appclient.opt_in(bob.pk,
         txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 100, asset), signer=bob.acc), fee_amount=20)
     
-    for i in range(0,3):
-        req = json.dumps({"nonce": i, "nonce_p": 100-i, "app": alice_appclient.app_id}).encode()
-        alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
-        bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
-        print(alice_appclient.get_application_state())
-    for i in range(3,4):
-        req = json.dumps({"nonce": i, "nonce_p": 100-i, "app": alice_appclient.app_id}).encode()
-        alice_appclient.call(Blackjack.hit_req, alice.pk, request=req)
-        bob_appclient.call(Blackjack.hit_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
-        print(alice_appclient.get_application_state())
-    for i in range(4,9):
-        req = json.dumps({"nonce": i, "nonce_p": 100-i, "app": alice_appclient.app_id}).encode()
-        alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
-        bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
-        print(alice_appclient.get_application_state())
+    find_card = lambda v,n: find_card_value(v, alice_appclient.app_id,  n, bob.sk, alice_appclient.approval_binary, alice_appclient.get_application_state()["cards"])
+    req = find_card(10, 0)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 1)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(9, 2)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(8, 3)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    assert alice_appclient.get_application_state()["state"] == state_finish
+    alice_appclient.delete(alice.pk, asset=asset, other=bob.pk, fee_holder=bob.pk)
+
+def test_blackjack_lose():
+    alice, bob, asset = init_env(2)
         
-    assert False
+    alice_appclient = ApplicationClient(client=client, app=Blackjack(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset, fee_holder=bob.pk, bank=bob.pk)
+
+    bob_appclient = ApplicationClient(client=client, app=Blackjack(), signer=bob.acc, app_id=app_id)
+    
+    alice_appclient.call(Blackjack.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 1000000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 100, asset), signer=alice.acc), fee_amount=20)
+    bob_appclient.opt_in(bob.pk,
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 100, asset), signer=bob.acc), fee_amount=20)
+    
+    find_card = lambda v,n: find_card_value(v, alice_appclient.app_id,  n, bob.sk, alice_appclient.approval_binary, alice_appclient.get_application_state()["cards"])
+    req = find_card(9, 0)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(5, 1)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(9, 2)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(2, 3)
+    alice_appclient.call(Blackjack.hit_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.hit_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(8, 4)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    assert alice_appclient.get_application_state()["state"] == state_finish
+    bob_appclient.delete(bob.pk, asset=asset, other=alice.pk, fee_holder=bob.pk)
+
+def test_blackjack_win_blackjack():
+    alice, bob, asset = init_env(2)
+        
+    alice_appclient = ApplicationClient(client=client, app=Blackjack(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset, fee_holder=bob.pk, bank=bob.pk)
+
+    bob_appclient = ApplicationClient(client=client, app=Blackjack(), signer=bob.acc, app_id=app_id)
+    
+    alice_appclient.call(Blackjack.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 1000000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 100, asset), signer=alice.acc), fee_amount=20)
+    bob_appclient.opt_in(bob.pk,
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 100, asset), signer=bob.acc), fee_amount=20)
+    
+    find_card = lambda v,n: find_card_value(v, alice_appclient.app_id,  n, bob.sk, alice_appclient.approval_binary, alice_appclient.get_application_state()["cards"])
+    req = find_card(1, 0)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 1)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 2)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(5, 3)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(6, 4)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    assert alice_appclient.get_application_state()["state"] == state_finish
+    alice_appclient.delete(alice.pk, asset=asset, other=bob.pk, fee_holder=bob.pk)
+
+def test_blackjack_draw_21():
+    alice, bob, asset = init_env(2)
+        
+    alice_appclient = ApplicationClient(client=client, app=Blackjack(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset, fee_holder=bob.pk, bank=bob.pk)
+
+    bob_appclient = ApplicationClient(client=client, app=Blackjack(), signer=bob.acc, app_id=app_id)
+    
+    alice_appclient.call(Blackjack.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 1000000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 100, asset), signer=alice.acc), fee_amount=20)
+    bob_appclient.opt_in(bob.pk,
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 100, asset), signer=bob.acc), fee_amount=20)
+    
+    find_card = lambda v,n: find_card_value(v, alice_appclient.app_id,  n, bob.sk, alice_appclient.approval_binary, alice_appclient.get_application_state()["cards"])
+    req = find_card(10, 0)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(8, 1)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 2)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(3, 3)
+    alice_appclient.call(Blackjack.hit_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.hit_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(5, 4)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(6, 5)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    assert alice_appclient.get_application_state()["state"] == state_push
+    alice_appclient.delete(alice.pk, asset=asset, other=bob.pk, fee_holder=bob.pk)
+
+def test_blackjack_lose_blackjack():
+    alice, bob, asset = init_env(2)
+        
+    alice_appclient = ApplicationClient(client=client, app=Blackjack(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset, fee_holder=bob.pk, bank=bob.pk)
+
+    bob_appclient = ApplicationClient(client=client, app=Blackjack(), signer=bob.acc, app_id=app_id)
+    
+    alice_appclient.call(Blackjack.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 1000000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 100, asset), signer=alice.acc), fee_amount=20)
+    bob_appclient.opt_in(bob.pk,
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 100, asset), signer=bob.acc), fee_amount=20)
+    
+    find_card = lambda v,n: find_card_value(v, alice_appclient.app_id,  n, bob.sk, alice_appclient.approval_binary, alice_appclient.get_application_state()["cards"])
+    req = find_card(9, 0)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 1)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 2)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(2, 3)
+    alice_appclient.call(Blackjack.hit_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.hit_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(1, 4)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    assert alice_appclient.get_application_state()["state"] == state_finish
+    bob_appclient.delete(bob.pk, asset=asset, other=alice.pk, fee_holder=bob.pk)
+
+def test_blackjack_draw():
+    alice, bob, asset = init_env(2)
+        
+    alice_appclient = ApplicationClient(client=client, app=Blackjack(), signer=alice.acc)
+    
+    app_id, app_acc, _ = alice_appclient.create(asset=asset, fee_holder=bob.pk, bank=bob.pk)
+
+    bob_appclient = ApplicationClient(client=client, app=Blackjack(), signer=bob.acc, app_id=app_id)
+    
+    alice_appclient.call(Blackjack.init, alice.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(alice.pk, sp, app_acc, 1000000), signer=alice.acc), asset=asset)
+    alice_appclient.opt_in(alice.pk, 
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(alice.pk, sp, app_acc, 100, asset), signer=alice.acc), fee_amount=20)
+    bob_appclient.opt_in(bob.pk,
+        txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bob.pk, sp, app_acc, 100, asset), signer=bob.acc), fee_amount=20)
+    
+    find_card = lambda v,n: find_card_value(v, alice_appclient.app_id,  n, bob.sk, alice_appclient.approval_binary, alice_appclient.get_application_state()["cards"])
+    req = find_card(9, 0)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 1)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(10, 2)
+    alice_appclient.call(Blackjack.distribute_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.distribute_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    req = find_card(9, 3)
+    alice_appclient.call(Blackjack.stand_req, alice.pk, request=req)
+    bob_appclient.call(Blackjack.stand_act, bob.pk, sig=algosdk.logic.teal_sign_from_program(bob.sk, req, alice_appclient.approval_binary))
+    
+    assert alice_appclient.get_application_state()["state"] == state_push
+    bob_appclient.delete(bob.pk, asset=asset, other=alice.pk, fee_holder=bob.pk)

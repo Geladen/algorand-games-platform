@@ -110,10 +110,11 @@ class Blackjack(Application):
             self.state.set(PUSH),
         )
     @internal(TealType.uint64)
-    def pop_card(self, pos):
+    def pop_card(self, pos, pop_id):
         """
         Remove a card from the deck and returns its ID
         pos: index of the card to be popped in the remaining card array
+        pop_id: id that encodes why the card has been popped (0 unpopped, 1 player, 2 bank)
         """
         i = ScratchVar(TealType.uint64)
         j = ScratchVar(TealType.uint64)
@@ -124,7 +125,7 @@ class Blackjack(Application):
                 )
             )),
             i.store(i.load() - Int(1)),
-            self.cards.set(SetByte(self.cards.get(), i.load(), Int(1))),
+            self.cards.set(SetByte(self.cards.get(), i.load(), pop_id)),
             self.cards_left.set(self.cards_left.get() - Int(1)),
             self.last_card.set(i.load()),
             
@@ -149,31 +150,35 @@ class Blackjack(Application):
             Min(id % Int(13) + Int(1), Int(10))
         )
     @internal(TealType.none)
-    def give_card_to_bank(self, id):
+    def give_card_to_bank(self, pos):
         """
         Give a card to the bank
-        id: ID of the card to be given
+        pos: index of the card to be popped in the remaining card array
         """
+        card = ScratchVar(TealType.uint64)
         min_value = ScratchVar(TealType.uint64)
         max_value = ScratchVar(TealType.uint64)
         return Seq(
+            card.store(self.pop_card(pos, Int(2))),
             self.bank_cards.set(self.bank_cards.get() + Int(1)),
-            min_value.store(self.card_value(id)),
+            min_value.store(self.card_value(card.load())),
             max_value.store(If(min_value.load() == Int(1)).Then(Int(11)).Else(min_value.load())),
             self.bank_min_total.set(self.bank_min_total.get() + min_value.load()),
             self.bank_max_total.set(self.bank_max_total.get() + max_value.load()),
         )
     @internal(TealType.none)
-    def give_card_to_player(self, id):
+    def give_card_to_player(self, pos):
         """
         Give a card to the player
-        id: ID of the card to be given
+        pos: index of the card to be popped in the remaining card array
         """
+        card = ScratchVar(TealType.uint64)
         min_value = ScratchVar(TealType.uint64)
         max_value = ScratchVar(TealType.uint64)
         return Seq(
+            card.store(self.pop_card(pos, Int(1))),
             self.player_cards.set(self.player_cards.get() + Int(1)),
-            min_value.store(self.card_value(id)),
+            min_value.store(self.card_value(card.load())),
             max_value.store(If(min_value.load() == Int(1)).Then(Int(11)).Else(min_value.load())),
             self.player_min_total.set(self.player_min_total.get() + min_value.load()),
             self.player_max_total.set(self.player_max_total.get() + max_value.load()),
@@ -368,7 +373,6 @@ class Blackjack(Application):
         to the bank. 
         sig: signature of self.request by self.bank
         """
-        card = ScratchVar(TealType.uint64)
         return Seq(
             OpUp(OpUpMode.OnCall).maximize_budget(Int(5000)),
             Assert(
@@ -376,12 +380,10 @@ class Blackjack(Application):
                 Ed25519Verify(self.request.get(), sig.get(), self.bank.get()),
             ),
             
-            card.store(self.pop_card(self.sig_to_card_pos(sig))),
-            
             If(self.player_cards.get() < Int(2)).Then(
-                self.give_card_to_player(card.load()),
+                self.give_card_to_player(self.sig_to_card_pos(sig)),
             ).Else(
-                self.give_card_to_bank(card.load()),
+                self.give_card_to_bank(self.sig_to_card_pos(sig)),
             ),
             
             # If distribution finished and player has blackjack (player cannot hit)
@@ -433,7 +435,7 @@ class Blackjack(Application):
                 Ed25519Verify(self.request.get(), sig.get(), self.bank.get()),
             ),
             
-            self.give_card_to_player(self.pop_card(self.sig_to_card_pos(sig))),
+            self.give_card_to_player(self.sig_to_card_pos(sig)),
             
             # If player busted and does not have aces worth 11 (bank wins)
             If(And(self.player_max_total.get() > Int(21), self.player_max_total.get() == self.player_min_total.get())).Then(
@@ -492,7 +494,7 @@ class Blackjack(Application):
                 Ed25519Verify(self.request.get(), sig.get(), self.bank.get()),
             ),
             
-            self.give_card_to_bank(self.pop_card(self.sig_to_card_pos(sig))),
+            self.give_card_to_bank(self.sig_to_card_pos(sig)),
             
             # If bank busted and does not have aces worth 11 (player wins)
             If(And(self.bank_max_total.get() > Int(21), self.bank_max_total.get() == self.bank_min_total.get())).Then(Seq(

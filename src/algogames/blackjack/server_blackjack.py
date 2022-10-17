@@ -37,4 +37,5 @@ def interact_blackjack(app_id):
         fun = funs[global_state]
         appclient_blackjack.call(fun, bank.pk, sig=algosdk.logic.teal_sign_from_program(bank.sk, request.encode(), appclient_blackjack.approval_binary))
     elif global_state == state_finish and winner == codecs.encode(algosdk.encoding.decode_address(bank.pk), 'hex').decode():
+        trysend(lambda: appclient_platform.call(GamePlatform.win_game, bank.pk, challenger=creator, app=appclient_blackjack.app_id))
         trysend(lambda: appclient_blackjack.delete(bank.pk, asset=skull_id, other=creator, fee_holder=fee_holder.pk))

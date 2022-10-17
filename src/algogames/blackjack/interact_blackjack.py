@@ -2,23 +2,23 @@ import json
 import random
 import algosdk
 import codecs
-from hashlib import sha256
 from beaker.client.application_client import ApplicationClient
 from beaker2 import call_nosend, opt_in_nosend, finalize
 from time import sleep
 from utils import ask_number, ask_string, is_opted, try_get_creator, try_get_global, trysend, try_get_local
 from game_platform.game_platform import GamePlatform, get_fee, min_stake
 from algorand import client
-from blackjack.blackjack import Blackjack, action_timeout, state_init, state_poor, state_wait, state_player, state_hit_act, state_bank, state_stand_act, state_finish, state_push, state_distribute, state_distribute_act
+from blackjack.blackjack import Blackjack, state_init, state_poor, state_wait, state_player, state_hit_act, state_bank, state_stand_act, state_finish, state_push, state_distribute, state_distribute_act
 from algosdk.atomic_transaction_composer import TransactionWithSigner
 from config import player, skull_id, platform_id, fee_holder
 from blackjack import server_blackjack
 
 def get_cards(cards: str, player: int):
-    return [i for i, c in enumerate(cards) if c == player]
+    return [i for i, c in enumerate(cards) if ord(c) == player]
 
 def get_card_value(id: int):
-    val = (id%13)+1
+    vals = [1,2,3,4,5,6,7,8,9,10,"Jack","Queen","King"] 
+    val = vals[id%13]
     suites = ["hearts", "diamonds", "clubs", "spades"]
     suite = suites[id//13]
     return f"{val} of {suite}"
@@ -37,7 +37,10 @@ def interact_blackjack(app_id=0):
         winner, action_timer, global_state, nonce, bank, last_card, cards = try_get_global(["winner", "action_timer", "state", "nonce", "bank", "last_card", "cards"], appclient_blackjack.app_id)
         if appclient_blackjack.app_id:
             print(appclient_blackjack.get_application_state())
-        
+        if cards:
+            print(cards)
+            print(f"Your hand: {', '.join(map(get_card_value, get_cards(cards, 1)))}")
+            print(f"Bank hand: {', '.join(map(get_card_value, get_cards(cards, 2)))}")
         server_blackjack.interact_blackjack(appclient_blackjack.app_id)
         
         if appclient_blackjack.app_id == 0:
@@ -93,7 +96,7 @@ def interact_blackjack(app_id=0):
             print("Registering win...", end=" ", flush=True)
             trysend(lambda: appclient_platform.call(GamePlatform.win_game, player.pk, challenger=fee_holder.pk, app=appclient_blackjack.app_id))
             print("Getting money...", end=" ", flush=True)
-            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, creator=creator, fee_holder=fee_holder.pk))
+            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=fee_holder.pk, fee_holder=fee_holder.pk))
             print("Done!")
             return
         elif global_state == state_finish and winner != codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
