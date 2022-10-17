@@ -17,9 +17,13 @@ pip install -r requirements.txt
 ```
 3. Interact with the platform:
 ```
-python main.py [arg=id player]
+python main.py [id player]
 ```
 
+To run tests, it is also possible to run
+```
+bash test.sh
+```
 
 # Goal of the Project
 
