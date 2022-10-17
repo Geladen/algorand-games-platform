@@ -8,6 +8,19 @@
 # algorand-games-platform
 Project for International School on Algorand Smart Contracts.
 
+# Usage
+
+1. Clone the repository
+2. Install all the required python modules
+```
+pip install -r requirements.txt
+```
+3. Interact with the platform:
+```
+python main.py [arg=id player]
+```
+
+
 # Goal of the Project
 
 This project aims to bring a gaming / gambling platform to the blockchain in order to make it decentralized. Players will be able to bet platform tokens to play against other players in 1 vs 1 matches. The first available game will be Morra. The tokens of the platform will also have the usefulness of acting as loyalty points to increase game winnings or receive game badges.
@@ -21,6 +34,37 @@ Roadmap:
 
 # Smart Contract Specifications
 Requirements, Use cases, Functions ...
+
+Morra:
+The owner of the match creates the smart contract and decides the amount of SKULLs to bet. From now on, any other user can join the game until a challenger is found. The challenger will have to deposit the amount of SKULL decided by the creator. Now each player must make his own play (the number of fingers [0-5] and their prediction on the total [0-10]), sending it to the contract in the form of a digest of the SHA256 hash function calculated on his play. The next phase is to reveal the players' plays, the players send their decisions as plain text on which the contract recalculates the digest of SHA256 to verify their correctness. Once the plays have been received, the contract will recognize the winning player and award him a point. The player who reaches 2 points first wins.
+
+The contract interacts with 2 actors: The Owner and the Challenger
+
+Requirements: both players must have enough SKULLs to start the game
+
+Functions:
+
+`create(asset, fee_holder)` The match organizer must call this function to create the smart contract and set the asset to be used in the match and the account that will receive the payout fees.
+
+`init(txn, asset)` 
+
+`define_stake(txn, fee_amount)` This function can only be called by the creator of the contract and is intended to define the stake of the game. The transaction specifies the stake amount and pays for it. In addition, the fee_amount that he must pay in case of a win is saved in the player's local state.
+
+`cancel()` It can only be called by the creator of the contract and is intended to cancel the game in case you are unable to find a challenger.
+
+`join(txn, fee_amount)` It can be called by any player other than the creator of the contract and is intended to enter the game as a challenger. To join the game it will be necessary to send the stake with a transaction and specify the fee_amount to be paid in case of a win
+
+`commit(commit)` this function must be called by both players to indicate their moves, these are passed in the commit parameter in the form of hash256 of a JSON of the following type:
+`{"guess": guess, "hand": hand, "nonce": nonce}`. The random nonce has the purpose of guaranteeing the secrecy of the commit avoiding brute force attacks.
+
+`reveal(reveal, other)` this function must be called by both players to reveal their move. The player when calling the function must provide as a parameter a reveal that corresponds to the JSON on which he has calculated the function hash256 sent previously. The function will check that the hash of the JSON is the same as the one provided during the commit phase, if so it will also check that it respects the rules of the game, i.e. that 0 <= hand <= 5 and 0 <= guess <= 10. 
+When the function is called for the second time it awards a point to the winner in the contract status and in case he has reached the two points it marks him as the winner of the match.
+
+`opt_in(txn, fee_amount)`
+
+`delete(asset, creator, fee_holder)`
+
+`forfeit()` It can be called by both players, as a guarantee in case the opponent does not want to reveal their choice or stops playing. The function checks that 10 Rounds have passed since the last state change and if so if the opponent has not interacted for the last 10 rounds then the caller of the function is set as the winner in the contract state
 
 # State of the Art
 
