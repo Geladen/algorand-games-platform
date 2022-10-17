@@ -79,7 +79,7 @@ Functions:
 
 `create(asset, fee_holder)` The match organizer must call this function to create the smart contract and set the asset to be used in the match and the account that will receive the payout fees.
 
-`init(txn, asset)` Must be called by contract creator to initialize the application, must review a transaction in which contract fees are paid
+`init(txn, asset)` Must be called by contract creator to initialize the application, must receive a transaction in which contract fees are paid
 
 `opt_in(txn, fee_amount)` This function must be called by both players to opt in to the contract, and based on the contract status it routs between the internal functions: join and define_stake
 
@@ -105,8 +105,10 @@ When the function is called for the second time it awards a point to the winner 
 
 **Blackjack:**
 
-`create`
-`init`
+`create(asset, bank, fee_holder)` This function can only be called by the game creator to create the contract. Requires to specify the game asset, the fee_hoolder to which the fees of any winnings will go and the address of the bank which will be saved in the contract status
+
+`init` Must be called by the contract creator to initialize the application, must receive a transaction in which the contract creation fees are paid
+
 `distribute req`
 `distribute act`
 `hit req`
