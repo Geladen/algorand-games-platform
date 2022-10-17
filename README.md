@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ```
 3. Interact with the platform:
 ```
-python src/algogames/main.py [id player]
+python src/algogames/main.py
 ```
 
 4. To run tests, it is also possible to run
