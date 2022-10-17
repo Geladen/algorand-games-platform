@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ```
 3. Interact with the platform:
 ```
-python main.py [id player]
+python src/algogames/main.py [id player]
 ```
 
 To run tests, it is also possible to run
@@ -37,7 +37,6 @@ Roadmap:
   4. Implement a second game (Rock-Paper-Scissors)
   6. Develop a loyalty system based on the earned points
   7. Implement a second game (BlackJack)
-  8. TODO
 
 # Smart Contract Specifications
 
