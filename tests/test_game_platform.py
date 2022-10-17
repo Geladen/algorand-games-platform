@@ -140,6 +140,9 @@ def test_morra_win_alice():
     alice_appclient_platform.call(GamePlatform.win_game, alice.pk, challenger=bob.pk, app=app_id_morra)
     alice_appclient_morra.delete(alice.pk, asset=asset, creator=alice.pk, fee_holder=xavier.pk)
 
+    assert bob_appclient_platform.get_account_state()["puntazzi"] == 0
+    assert alice_appclient_platform.get_account_state()["puntazzi"] == 1
+
 def test_morra_win_bob():
     xavier, alice, bob = init_env(3)
     

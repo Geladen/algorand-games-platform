@@ -8,7 +8,7 @@ from time import sleep
 from utils import ask_number, ask_string, is_opted, try_get_creator, try_get_global, trysend, try_get_local
 from game_platform.game_platform import GamePlatform, get_fee, min_stake
 from algorand import client
-from blackjack.blackjack import Blackjack, state_init, state_poor, state_wait, state_player, state_hit_act, state_bank, state_stand_act, state_finish, state_push, state_distribute, state_distribute_act
+from blackjack.blackjack import Blackjack, action_timeout, state_init, state_poor, state_wait, state_player, state_hit_act, state_bank, state_stand_act, state_finish, state_push, state_distribute, state_distribute_act
 from algosdk.atomic_transaction_composer import TransactionWithSigner
 from config import player, skull_id, platform_id, fee_holder
 from blackjack import server_blackjack
@@ -35,12 +35,6 @@ def interact_blackjack(app_id=0):
         puntazzi = try_get_local("puntazzi", appclient_platform.app_id)
         creator = try_get_creator(appclient_blackjack.app_id)
         winner, action_timer, global_state, nonce, bank, last_card, cards = try_get_global(["winner", "action_timer", "state", "nonce", "bank", "last_card", "cards"], appclient_blackjack.app_id)
-        if appclient_blackjack.app_id:
-            print(appclient_blackjack.get_application_state())
-        if cards:
-            print(cards)
-            print(f"Your hand: {', '.join(map(get_card_value, get_cards(cards, 1)))}")
-            print(f"Bank hand: {', '.join(map(get_card_value, get_cards(cards, 2)))}")
         server_blackjack.interact_blackjack(appclient_blackjack.app_id)
         
         if appclient_blackjack.app_id == 0:
@@ -66,7 +60,8 @@ def interact_blackjack(app_id=0):
             return 
         elif revealed and (global_state == state_player or global_state == state_bank or global_state == state_distribute):
             revealed = False
-            print(f"Uncovered card: {get_card_value(last_card)}")
+            print(f"Your hand: {', '.join(map(get_card_value, get_cards(cards, 1)))}")
+            print(f"Bank hand: {', '.join(map(get_card_value, get_cards(cards, 2)))}")
         elif global_state == state_player:
             choice = ask_string("Do you want to hit or stand? (hit/stand)", lambda x: x=='hit' or x=='stand')
             nonce_p = random.randint(0, 2**64-1)
@@ -77,12 +72,12 @@ def interact_blackjack(app_id=0):
             revealed = True
         elif global_state == state_hit_act or global_state == state_stand_act or global_state == state_distribute_act:
             print("Waiting for dealer to serve...")
-            # if action_timer + action_timeout <= round:
-            #     print("Player inactive, reporting...", end=" ", flush=True)
-            #     trysend(lambda: appclient_blackjack.call(Blackjack.forfeit, player.pk))
-            #     print("Done!")
-            # else:
-            #     sleep(3)
+            if action_timer + action_timeout <= round:
+                print("Player inactive, reporting...", end=" ", flush=True)
+                trysend(lambda: appclient_blackjack.call(Blackjack.forfeit, player.pk))
+                print("Done!")
+            else:
+                sleep(3)
             sleep(3)
         elif global_state == state_bank or global_state == state_distribute:
             nonce_p = random.randint(0, 2**64-1)

@@ -35,12 +35,20 @@ class GamePlatform(Application):
 
     @create
     def create(self, fee_holder: abi.Account):
+        """
+        Callable to create the contract
+        fee_holder: address that will receive the game fees
+        """
         return Seq(
             self.fee_holder.set(fee_holder.address())
         )
         
     @external
     def init(self, txn: abi.PaymentTransaction):
+        """
+        Callable by the creator to initialize the application account, and create the SKULL asset
+        txn: transaction that pays the minimum balance + fees of the contract
+        """
         return Seq(
             Assert(
                 Txn.sender() == Global.creator_address(),
@@ -62,9 +70,15 @@ class GamePlatform(Application):
         
     @external
     def buy(self, txn: abi.PaymentTransaction, asset: abi.Asset):
+        """
+        Callable to buy some SKULLs
+        txn: transaction that pays the ALGOs to buy SKULLs
+        asset: reference to self.asset (used to enable InnerTxn)
+        """
         return Seq(
             Assert(
                 txn.get().receiver() == Global.current_application_address(),
+                asset.asset_id() == self.asset.get(),
             ),
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
@@ -78,6 +92,11 @@ class GamePlatform(Application):
         
     @external
     def sell(self, txn: abi.AssetTransferTransaction):
+        """
+        Callable to buy some skulls
+        txn: transaction that pays the SKULLs to get back ALGOs
+        asset: reference to self.asset (used to enable InnerTxn)
+        """
         return Seq(
             Assert(
                 txn.get().xfer_asset() == self.asset.get(),
@@ -94,6 +113,10 @@ class GamePlatform(Application):
         
     @opt_in
     def opt_in(self, username: abi.String):
+        """
+        Callable to join the platform
+        username: the username to assign to the account
+        """
         return Seq(
             self.username.set(username.get()),
             self.puntazzi.set(Int(0))
@@ -101,8 +124,15 @@ class GamePlatform(Application):
         
     @external
     def new_game(self, game: abi.String, txn: abi.ApplicationCallTransaction, app: abi.Application):
+        """
+        Callable when creating a new game. Checks that the contract is initialized correctly, and if so, saves
+        a reference of it in the local state of the caller, together with its type.
+        txn: transaction in which the user opts into the game
+        app: reference to txn.application_id
+        """
         return Seq(
             Assert(
+                app.application_id() == txn.get().application_id(),
                 check_fees(fee_amounts, self.puntazzi.get(),  App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value)),
                 And(
                     App.globalGetEx(txn.get().application_id(), Bytes("fee_holder")).outputReducer(lambda value, _: value) == self.fee_holder.get(),
@@ -110,8 +140,8 @@ class GamePlatform(Application):
                     Or(*[
                         And(
                             game.get() == Bytes(opt[0]),
-                            AppParam.approvalProgram(app.application_id()).outputReducer(lambda value, _: value) == Bytes(opt[1]),
-                            AppParam.clearStateProgram(app.application_id()).outputReducer(lambda value, _: value) == Bytes(opt[2]),
+                            AppParam.approvalProgram(txn.get().application_id()).outputReducer(lambda value, _: value) == Bytes(opt[1]),
+                            AppParam.clearStateProgram(txn.get().application_id()).outputReducer(lambda value, _: value) == Bytes(opt[2]),
                             *opt[3],
                         )
                         for opt in [
@@ -130,7 +160,16 @@ class GamePlatform(Application):
 
     @external
     def join_game(self, challenger: abi.Account, txn: abi.ApplicationCallTransaction, app: abi.Application):
+        """
+        Callable when joining an existing game. Checks that the game is an actual valid game (created 
+        using the platform) and if so, saves a reference of it in the local state of the caller, together with
+        its type.
+        challenger: the player who we are playing against
+        txn: transaction in which the user opts into the game
+        app: reference to txn.application_id
+        """
         return Seq(
+            app.application_id() == txn.get().application_id(),
             Assert(
                 check_fees(fee_amounts, self.puntazzi.get(),  App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value)),
                 txn.get().application_id() == self.current_game[challenger.address()].get(),
@@ -143,13 +182,20 @@ class GamePlatform(Application):
         
     @external
     def win_game(self, challenger: abi.Account, app: abi.Application):
+        """
+        Callable when you have won a game. Checks that you have really won the game. If so, it awards points
+        based on how much was staked.
+        challenger: the player who we are playing against
+        app: reference to txn.application_id
+        """
         return Seq(
             Assert(
+                app.application_id() == txn.get().application_id(),
                 challenger.address() != Txn.sender(),
                 self.current_game[challenger.address()].get() == self.current_game.get(),
                 App.globalGetEx(self.current_game.get(), Bytes("winner")).outputReducer(lambda value, _: value) == Txn.sender(),
             ),
+            self.puntazzi.set(self.puntazzi.get() + App.globalGetEx(self.current_game.get(), Bytes("stake")).outputReducer(lambda value, _: value) / Int(100)),
             self.current_game.set(Int(0)),
             self.current_game[challenger.address()].set(Int(0)),
-            self.puntazzi.set(self.puntazzi.get() + App.globalGetEx(self.current_game.get(), Bytes("stake")).outputReducer(lambda value, _: value) / Int(100)),
         )
