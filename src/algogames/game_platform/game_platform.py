@@ -169,8 +169,8 @@ class GamePlatform(Application):
         app: reference to txn.application_id
         """
         return Seq(
-            app.application_id() == txn.get().application_id(),
             Assert(
+                app.application_id() == txn.get().application_id(),
                 check_fees(fee_amounts, self.puntazzi.get(),  App.localGetEx(txn.get().sender(), txn.get().application_id(), Bytes("fee_amount")).outputReducer(lambda value, _: value)),
                 txn.get().application_id() == self.current_game[challenger.address()].get(),
                 txn.get().on_completion() == OnComplete.OptIn,
@@ -190,7 +190,7 @@ class GamePlatform(Application):
         """
         return Seq(
             Assert(
-                app.application_id() == txn.get().application_id(),
+                app.application_id() == self.current_game.get(),
                 challenger.address() != Txn.sender(),
                 self.current_game[challenger.address()].get() == self.current_game.get(),
                 App.globalGetEx(self.current_game.get(), Bytes("winner")).outputReducer(lambda value, _: value) == Txn.sender(),
