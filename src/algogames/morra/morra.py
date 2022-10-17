@@ -2,16 +2,23 @@ from typing import Final
 from pyteal import *
 from beaker import *
 from algorand import client
-from config import fee_holder, berluscoin_id
+from config import fee_holder, skull_id
 
 action_timeout = 10
 
-INIT = Int(0)
-POOR = Int(1)
-WAIT = Int(2)
-COMMIT = Int(3)
-REVEAL = Int(4)
-FINISH = Int(5)
+state_init = 0
+state_poor = 1
+state_wait = 2
+state_commit = 3
+state_reveal = 4
+state_finish = 5
+
+INIT = Int(state_init)
+POOR = Int(state_poor)
+WAIT = Int(state_wait)
+COMMIT = Int(state_commit)
+REVEAL = Int(state_reveal)
+FINISH = Int(state_finish)
 
 WINNING_SCORE = Int(2)
 TIMEOUT = Int(action_timeout)
@@ -39,6 +46,11 @@ class SaMurra(Application):
     
     @create
     def create(self, asset: abi.Asset, fee_holder: abi.Account):
+        """
+        Callable to create the contract
+        asset: asset that will be staked
+        fee_holder: address that will receive the fees
+        """
         return Seq(
             self.state.set(INIT),
             self.action_count.set(Int(0)),
@@ -48,11 +60,17 @@ class SaMurra(Application):
         
     @external
     def init(self, txn: abi.PaymentTransaction, asset: abi.Asset):
+        """
+        Callable by the creator to initialize the application account
+        txn: transaction that pays the minimum balance + fees of the contract
+        asset: reference to self.asset (used to enable AssetTransfer InnerTxn)
+        """
         return Seq(
             Assert(
                 Txn.sender() == Global.creator_address(),
                 self.state.get() == INIT,
                 txn.get().amount() == Int(210000),
+                asset.asset_id() == self.asset.get(),
             ),
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
@@ -68,6 +86,11 @@ class SaMurra(Application):
         
     @internal
     def define_stake(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
+        """
+        Callable by the creator to define the stake of the game
+        txn: transaction that pays (and specifies) the stake
+        fee_amount: denominator of what will be paid as fee if the creator wins
+        """
         return Seq(
             Assert(
                 Txn.sender() == Global.creator_address(),
@@ -81,10 +104,28 @@ class SaMurra(Application):
             self.fee_amount.set(fee_amount.get()),
 
             self.state.set(WAIT),
-        )        
+        )       
+
+    @internal
+    def cancel(self):
+        """
+        Callable by the creator if the bank failed to join, to cancel the game
+        """
+        return Seq(
+            Assert(
+                Txn.sender() == Global.creator_address(),
+                self.state.get() == WAIT,
+            ),
+            self.give_funds_caller(Int(0))
+        ) 
         
     @internal
     def join(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
+        """
+        Callable by a second player to join the game
+        txn: transaction that pays the stake
+        fee_amount: denominator of what will be paid as fee if the joining player wins
+        """
         return Seq(
             Assert(
                 self.state.get() == WAIT,
@@ -102,18 +143,12 @@ class SaMurra(Application):
             self.state.set(COMMIT)   
         )
 
-    @internal
-    def cancel(self):
-        return Seq(
-            Assert(
-                Txn.sender() == Global.creator_address(),
-                self.state.get() == WAIT,
-            ),
-            self.empty_account_caller(Int(0))
-        )
-
     @external
     def commit(self, commit: abi.DynamicBytes):
+        """
+        Callable by each player to commit their move.
+        commit: sha256 hash of a JSON containing a (0 <= `guess` <= 10), a (0 <= `hand` <= 5) and a random nonce.
+        """
         return Seq(
             Assert(
                 self.player_state.get() != COMMIT,
@@ -135,6 +170,11 @@ class SaMurra(Application):
     
     @external
     def reveal(self, reveal: abi.String, other: abi.Account):
+        """
+        Callable by each player to reveal their move.
+        reveal: JSON corresponding to the previously committed hash
+        other: address of the other player 
+        """
         guessedSelf = ScratchVar(TealType.uint64)
         guessedOther = ScratchVar(TealType.uint64)
         return Seq(
@@ -188,15 +228,21 @@ class SaMurra(Application):
         
     @internal
     def finish(self):
+        """
+        Callable by the winner to get the money.
+        """
         return Seq(
             Assert(
                 self.winner.get() == Txn.sender()
             ),
-            self.empty_account_caller(Int(1))
+            self.give_funds_caller(Int(1))
         )
 
     @external
     def forfeit(self):
+        """
+        Callable by either player when the other one stops interacting.
+        """
         return Seq(
             Assert(Or(
                 And(
@@ -213,10 +259,14 @@ class SaMurra(Application):
         )
         
     @internal(TealType.none)
-    def empty_account_caller(self, fee):
+    def give_funds_caller(self, pay_fee):
+        """
+        Give all the funds to the caller 
+        pay_fee: specifies if a part of the funds will be paid as fee
+        """
         return Seq(
             InnerTxnBuilder.Begin(),
-            If(fee).Then(Seq(
+            If(pay_fee).Then(Seq(
                 InnerTxnBuilder.SetFields({
                     TxnField.type_enum: TxnType.AssetTransfer,
                     TxnField.xfer_asset: self.asset.get(),
@@ -241,6 +291,11 @@ class SaMurra(Application):
         
     @opt_in
     def opt_in(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
+        """
+        Routes the opt-in methods (define_stake and join)
+        txn: transaction that pays the stake
+        fee_amount: denominator of what will be paid as fee if the joining player wins
+        """
         return If(self.state.get() == POOR).Then(
                 self.define_stake(txn, fee_amount)
             ).ElseIf(self.state.get() == WAIT).Then(
@@ -251,13 +306,26 @@ class SaMurra(Application):
     
     @delete
     def delete(self, asset: abi.Asset, creator: abi.Account, fee_holder: abi.Account):
-        return If(self.state.get() == FINISH).Then(
+        """
+        Routes the finish and cancel methods
+        creator: reference to Global.creator_address() (used to enable InnerTxn)
+        fee_holder: reference to self.fee_holder (used to enable InnerTxn)
+        asset: reference to self.asset (used to enable InnerTxn)
+        """
+        return Seq(
+            Assert(
+                asset.asset_id() == self.asset.get(),
+                creator.address() == Global.creator_address(),
+                fee_holder.address() == self.fee_holder.get(),
+            ),
+            If(self.state.get() == FINISH).Then(
                 self.finish()
             ).ElseIf(self.state.get() == WAIT).Then(
                 self.cancel()
             ).Else(
                 Err()
             )
+        )
         
 from base64 import b64decode
 approval_binary = b64decode(client.compile(SaMurra().approval_program)["result"])

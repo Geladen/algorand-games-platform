@@ -19,5 +19,5 @@ match arg:
     case _:
         player = bob
 
-berluscoin_id = int(os.environ['BERLUSCOIN_ID']) if 'BERLUSCOIN_ID' in os.environ else None
+skull_id = int(os.environ['SKULL_ID']) if 'SKULL_ID' in os.environ else None
 platform_id = int(os.environ['PLATFORM_ID']) if 'PLATFORM_ID' in os.environ else None

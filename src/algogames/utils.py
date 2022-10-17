@@ -1,9 +1,11 @@
 from typing import Callable, List, Tuple
 from algorand import client, indexer
-from config import platform_id, player
+from config import platform_id, player, skull_id
 from beaker.client.application_client import ApplicationClient
 from game_platform.game_platform import GamePlatform
 import codecs
+import beaker
+import algosdk
 
 def find_games():
     accs = indexer.accounts(application_id=platform_id)["accounts"]
@@ -26,28 +28,76 @@ def find_games():
     games = [(g, games[g]) for g in sorted(list(set(games.keys())), reverse=True)]
     return games
 
-def try_get_local(key: str, app_id: int):
-    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=app_id)
-    if is_opted(player.pk, platform_id):
-        local_state = appclient.get_account_state()
-        return local_state[key] if key in local_state else None
-    
-    return None
+def try_get_local(keys: List[str] | str, app_id: int, account=player.pk):
+    if type(keys) is str:
+        keys = [keys]
+    try:
+        appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=app_id)
+        if is_opted(account, app_id):
+            local_state = appclient.get_account_state(account)
+            res = [local_state[key] if key in local_state else None for key in keys] 
+        else:
+            res = [None for _ in keys]
+        return res[0] if len(keys) == 1 else res
+            
+    except algosdk.error.AlgodHTTPError as e:
+        if "account application info not found" in str(e):
+            res = [None for _ in keys]
+            return res[0] if len(keys) == 1 else res
+        else:
+            raise e
         
-def try_get_global(key: str, app_id: int):
-    appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=app_id)
-    global_state = appclient.get_application_state()
-    return global_state[key] if key in global_state else None
+def try_get_global(keys: List[str] | str, app_id: int):
+    if type(keys) is str:
+        keys = [keys]
+    try:
+        appclient = ApplicationClient(client, GamePlatform(), signer=player.acc, app_id=app_id)
+        global_state = appclient.get_application_state()
+        res =  [global_state[key] if key in global_state else None for key in keys]
+        return res[0] if len(keys) == 1 else res
+    except algosdk.error.AlgodHTTPError as e:
+        if "application does not exist" in str(e):
+            res = [None for _ in keys]
+            return res[0] if len(keys) == 1 else res
+        else: 
+            raise e
     
+def try_get_creator(app_id):
+    try:
+        res = client.application_info(app_id)['params']['creator']
+        return res
+    except algosdk.error.AlgodHTTPError as e:
+        if "application does not exist" in str(e):
+            return None
+        else: 
+            raise e
         
 def is_opted(account, app_id):
-    return any(application['id'] == app_id for application in client.account_info(account)["apps-local-state"])
+    account_info = client.account_info(account)
+    return any(application['id'] == app_id for application in account_info["apps-local-state"])
+
+def is_opted_asset(account, asset_id):
+    account_info = client.account_info(account)
+    return any(asset['asset-id'] == asset_id for asset in account_info["assets"])
 
 def trysend(f):
     try:
-        f()
-    except:
-        print("Could not submit transaction.")
+        return f()
+    except (algosdk.error.AlgodHTTPError, beaker.client.logic_error.LogicException) as e:
+        if ("underflow" in str(e)) or (f"asset {skull_id} missing from" in str(e)):
+            print("Not enough skulls.")
+            return None
+        elif ("tried to spend" in str(e)) or ("balance" in str(e) and "below min" in str(e)):
+            print("Not enough ALGOs.")
+            return None
+        elif f"has not opted in to app {platform_id}" in str(e):
+            print("Platform not joined.")
+            return None
+        elif "application does not exist"  in str(e):
+            print("Game is over.")
+            return False
+        else:
+            raise e
 
 def ask_string(query: str, valid: Callable[[str], bool], skip_line=True):
     first = True
