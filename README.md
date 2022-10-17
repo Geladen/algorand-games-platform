@@ -42,7 +42,32 @@ Roadmap:
 # Smart Contract Specifications
 Requirements, Use cases, Functions ...
 
-Morra and Rock-Paper-Scissors:
+
+**Game Platform:**
+
+The owner of the platform creates the smart contract by deciding the address of the fee_holder to whom the fees that players will pay on wins will go. The platform creates an internal asset the Algorand Skull Coin with the maximum possible supply, and manages the basic functionality of exchanging Algos and SKULL with a ratio of 1 Algo = 1000000 SKULL. Furthermore, through the platform it is possible to create new games / participate in pre-established games. Based on the number and quantity of SKULLs won, players can get points called puntazzi, which through a step system allow you to obtain a reduction on the fees to be paid in case of victory in the games.
+
+The contract interacts with n actors: the players
+To start using the platform the only requirement is that the player has enough algo to buy SKULLs.
+
+`create(fee_holder)` This function is intended to create the contract. The creator of the platform specifies the address in which to deposit all earnings from fees
+
+`init(txn)` This function can only be called by the creator of the contract and is intended to initialize the platform. The creator must pay a transaction to pay the contract creation fees. The new SKULL asset is also created.
+
+`buy(txn, asset)` It aims to buy a quantity of assets specified in the transaction with which they are bought
+
+`sell(txn)` It aims to sell a specified amount of assets in the transaction with which they are sold
+
+`opt_in(username)` This function can be called by any user to opt-in to the platform, with a username it will be saved in the local state of the platform
+
+`new_game(game, txn, app)`
+
+`join_game(challenger, txn, app)` This feature allows a player to participate in a game as a challenger by checking that the game parameters provided in the transaction are correct, if so, set in the local state of the platform the match that matches that opponent.
+
+`win_game(challenger, app)` This function can only be called by the winner of a game, the function checks that the player is actually the winner of a valid partiota, if so, it increases the player's points according to the formula: **staked SKULLs / 100** saving them in the local state of the application 
+
+
+**Morra and Rock-Paper-Scissors:**
 The two contracts are extremely similar, so they will be explained together highlighting the differences.
 
 The owner of the match creates the smart contract and decides the amount of SKULLs to bet. From now on, any other user can join the game until a challenger is found. The challenger will have to deposit the amount of SKULL decided by the creator. Now each player must make his own play (the number of fingers [0-5] and their prediction on the total [0-10]), sending it to the contract in the form of a digest of the SHA256 hash function calculated on his play. The next phase is to reveal the players' plays, the players send their decisions as plain text on which the contract recalculates the digest of SHA256 to verify their correctness. Once the plays have been received, the contract will recognize the winning player and award him a point. The player who reaches 2 points first wins.
