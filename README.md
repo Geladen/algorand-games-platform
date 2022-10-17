@@ -46,6 +46,7 @@ Roadmap:
 The owner of the platform creates the smart contract by deciding the address of the fee_holder to whom the fees that players will pay on wins will go. The platform creates an internal asset the Algorand Skull Coin with the maximum possible supply, and manages the basic functionality of exchanging Algos and SKULL with a ratio of 1 Algo = 1000000 SKULL. Furthermore, through the platform it is possible to create new games / participate in pre-established games. Based on the number and quantity of SKULLs won, players can get points called puntazzi, which through a step system allow you to obtain a reduction on the fees to be paid in case of victory in the games.
 
 The contract interacts with n actors: the players
+
 To start using the platform the only requirement is that the player has enough algo to buy SKULLs.
 
 `create(fee_holder)` This function is intended to create the contract. The creator of the platform specifies the address in which to deposit all earnings from fees
