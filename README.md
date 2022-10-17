@@ -69,6 +69,7 @@ To start using the platform the only requirement is that the player has enough a
 The two contracts are extremely similar, so they will be explained together highlighting the differences.
 
 The owner of the match creates the smart contract and decides the amount of SKULLs to bet. From now on, any other user can join the game until a challenger is found. The challenger will have to deposit the amount of SKULL decided by the creator. Now, each player has to choose a number from 0 to 5 which will represent the amount of fingers he decided to pick and a second number from the interval between 0 and 10 as his guess. Then each platyer have to send to the contract the digest obtained from the SHA256 hash function. The next phase is to reveal the players' plays, the players send their decisions as plain text on which the contract recalculates the digest of SHA256 to verify their correctness. Once the plays have been received, the contract will recognize the winning player and award him a point. The player who reaches 2 points first wins.
+
 The two smart contracts were developed as finite state automata
 The contract interacts with 2 actors: The Owner and the Challenger
 
@@ -101,9 +102,26 @@ When the function is called for the second time it awards a point to the winner 
 `cancel()` It can only be called by the creator of the contract and is intended to cancel the game in case you are unable to find a challenger.
 
 `finish()` It can only be called by the winner, and has the aim of sending the SKULLs to the winner from whom a percentage of the fee is subtracted and sent to the address of the fee_holder
+
+**Blackjack:**
+
+`create`
+`init`
+`distribute req`
+`distribute act`
+`hit req`
+`hit act`
+`stand req`
+`stand act`
+`forfeit`
+`optin`
+`delete`
+
 # State of the Art
 
 The most important time implementation is this [https://developer.algorand.org/solutions/morra-game-using-reach/](https://developer.algorand.org/solutions/morra-game-using-reach/) in Reach. We will develop it using Beaker to observe the differences. 
+
+
 
 # Technical Challenges
 
