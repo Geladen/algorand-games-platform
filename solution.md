@@ -3,18 +3,25 @@
 ## Overview
 
 <!-- What is blackjack -->
-Blackjack is the most widely played casino banking card game in the world.
-<!-- Why not online blackjack -->
-<!-- Why blackjack in blockchain -->
+Blackjack is the most widely played casino banking card game in the world, where players compete against the bank rather than each other. The goal is to get a hand total closer to 21 than the dealer without going over 21.
+At the beginning of a game of Blackjack, players and the dealer are each dealt two cards. Players' cards are normally dealt face up, while the dealer has one face down and one face up.
+The bank's advantage in this game comes from several rules that favor it. The most significant of these is that the player must act before the dealer, allowing the player to bust and lose the bet before the dealer plays.
+
+The advantage of being able to bet through interaction with a public smart contract on the blockchain compared to playing in classic online casinos is that the goodness of the game does not require trusting a centralized system. Security is therefore directly linked to security by the blockchain itself.
+
 <!-- We use beaker -->
 
 ## Design
+
+The smart contract explained below was created to be connected to a gambling platform, for this reason there are fees to be paid in case of victory.
 
 <!-- problema: nessuno deve conoscere il mazzo -->
 <!-- problema: attore smette di interagire -->
 <!-- server come dealer -->
 
 ## Implementation
+
+ ![DIAGRAMMA FARLOCCO](https://i0.wp.com/oneclicktutorial.altervista.org/wp-content/uploads/2017/03/download-4.png?ssl=1)
 
 ### The state
 
@@ -36,8 +43,16 @@ Blackjack is the most widely played casino banking card game in the world.
 * *bank_max_total*. The maximum total of the bank's cards based on the value of the ace.
 * *state*. The state of the game. It can be one of the following:
   * *init*. ...
+  * *poor*. ...
   * *wait*. ...
   * *distribute*. ...
+  * *distribute act*. ...
+  * *player*. ...
+  * *hit act*. ...
+  * *bank*. ...
+  * *stand act*. ...
+  * *finish*. ...
+  * *push*. ...
 * *action_timer*. The round in which the last action was executed.
 * *winner*. The winnerá address of the game.
 * *fee_amount*. The amount of the asset that the fee holder will receive as a fee at the end of the game.
@@ -60,6 +75,7 @@ def create(self, asset: abi.Asset, bank: abi.Account, fee_holder: abi.Account):
         self.state.set(INIT),
     )
 ```
+
 The create function initializes the deck, the actor adresses and the state.
 
 ### Defining the stake of the match
@@ -87,7 +103,7 @@ def define_stake(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64
 
 The function sets the amount of the assets to bet, the fee amount to be paid by the player and the state.
 
-## Bank joining the match
+### Bank joining the match
 
 To start the game the bank has to join the contract with the `join_server` function. To do this the bank must send the same amount of assets that was previously defined by the player.
 
@@ -113,12 +129,265 @@ def join_server(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64)
 
 The function sets the fee amount to be paid by the bank, the action timer, and the state.
 
+### Routing the opt-in methods
 
+Routes the opt-in methods (define_stake and join_server)
+txn: transaction that pays the stake
+fee_amount: denominator of what will be paid as fee if the joining player wins
 
-<!-- ... -->
+```py
+@opt_in
+def opt_in(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
+        return If(self.state.get() == POOR).Then(
+                self.define_stake(txn, fee_amount)
+            ).ElseIf(self.state.get() == WAIT).Then(
+                self.join_server(txn, fee_amount)
+            ).Else(
+                Err()
+            )
+```
 
-init define stake join
-tutte le altre
-cancel finish forfeit give-funds-back
+This function checks the state of the smart contract and based on it calls the correct internal function to do the opt-in.
+
+### Initializing the application account
+
+To initialize the application account the creator of the smart contract has pay the fees of the contract and the minimum balance.
+
+```py
+@external
+def init(self, txn: abi.PaymentTransaction, asset: abi.Asset):
+        return Seq(
+            Assert(
+                self.state.get() == INIT,
+                Txn.sender() == Global.creator_address(),
+                txn.get().amount() == Int(1000000),
+                asset.asset_id() == self.asset.get(),
+            ),
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.asset_receiver: Global.current_application_address(),
+                TxnField.xfer_asset: self.asset.get(),
+                TxnField.asset_amount: Int(0),
+            }),
+            InnerTxnBuilder.Submit(),
+            
+            self.state.set(POOR),
+        )
+```
+
+The function creates and submits an asset transaction, it also sets the new state.
+
+### The bank wins
+
+This function sets the bank as winner in the state.
+
+```py
+@internal(TealType.none)
+def win_bank(self):        
+        return Seq(
+            self.state.set(FINISH),
+            self.winner.set(self.bank.get())
+        )
+```
+
+### The player wins
+
+This function sets the player as winner in the state.
+
+```py
+@internal(TealType.none)
+def win_player(self):
+        return Seq(
+            self.state.set(FINISH),
+            self.winner.set(Global.creator_address())
+        )
+```
+
+### The game ends in a draw
+
+The function updates the application state to PUSH.
+
+```py
+@internal(TealType.none)
+def push(self):
+        return Seq(
+            self.state.set(PUSH),
+        )
+```
+
+### Handle an actor leaving the match
+
+To prevent the case in which a player realizes he has lost and stops interacting with the contract, the forfeit function has been implemented which can be called by both players. To use the function, a player must have exceeded the maximum time to perform an action.
+
+```py
+@external
+def forfeit(self):
+        return Seq(
+            Assert(Or(
+                And(
+                    Or(
+                        self.state.get() == PLAYER,
+                        self.state.get() == BANK,
+                    ), 
+                    Txn.sender() == self.bank.get(),
+                ),
+                And(
+                    Or(
+                        self.state.get() == HIT_ACT,
+                        self.state.get() == STAND_ACT,
+                    ),
+                    Txn.sender() == Global.creator_address(),
+                ),
+                self.action_timer.get() + TIMEOUT <= Global.round(),
+            )),
+            self.state.set(FINISH),
+            self.winner.set(Txn.sender())
+        )
+```
+
+The function sets the state and the winner of the match.
+
+### Routing the game delete
+
+The `delete` function, like the opt-in, has the aim of routing the possible methods for closing the contract according to the state it is in. The game can end with the `cancel`, `finish` and `give_funds_back` (in case of push) methods.
+
+```py
+@delete
+def delete(self, asset: abi.Asset, other: abi.Account, fee_holder: abi.Account):
+        return Seq(
+            Assert(
+                asset.asset_id() == self.asset.get(),
+                If(Txn.sender() == Global.creator_address()).Then(other.address() == self.bank.get()).Else(other.address() == Global.creator_address()),
+                fee_holder.address() == self.fee_holder.get(),
+            ),
+            If(self.state.get() == FINISH).Then(
+                self.finish()
+            ).ElseIf(self.state.get() == WAIT).Then(
+                self.cancel()
+            ).ElseIf(self.state.get() == PUSH).Then(
+                self.give_funds_back()
+            ).Else(
+                Err()
+            )
+        )
+```
+
+### The bank may not join the game
+
+If the bank does not enter the game, the player can decide to cancel the game and get the bet back.
+
+```py
+@internal
+def cancel(self):
+        return Seq(
+            Assert(
+                Txn.sender() == Global.creator_address(),
+                self.state.get() == WAIT,
+            ),
+            self.give_funds_caller(Int(0)),
+        )
+```
+
+The function closes the smart contract and sends the assets to the player.
+
+### Someone wins
+
+The winner of the game can call the `finish` function to collect the winnings.
+
+```py
+@internal
+def finish(self):
+        return Seq(
+            Assert(
+                self.winner.get() == Txn.sender()
+            ),
+            
+            If(self.winner.get() == self.bank.get()).Then(
+                self.give_funds_caller(Int(0))
+            ).Else(
+                self.give_funds_caller(Int(1))
+            )
+        )
+```
+
+### Getting funds back in case of draw
+
+If the match ended in a draw, and the contract status is set to PUSH, the player can get back the assets staked in the match.
+
+```py
+@internal(TealType.none)
+def give_funds_back(self):
+        return Seq(
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.xfer_asset: self.asset.get(),
+                TxnField.asset_amount: self.stake.get(),
+                TxnField.asset_receiver: Global.creator_address(),
+            }),
+            InnerTxnBuilder.Next(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.xfer_asset: self.asset.get(),
+                TxnField.asset_close_to: self.bank.get(),
+            }),
+            InnerTxnBuilder.Next(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.Payment,
+                TxnField.close_remainder_to: Global.creator_address(),
+            }),
+            InnerTxnBuilder.Submit(),
+        )
+```
+
+The function creates and sends a transaction to close the contract and send the funds back to the player.
+
+### Giving funds to the winner
+
+When the player or the bank wins they must receive the won assets. To call the method it is necessary to provide with a boolean whether the winner has to pay the fees or not.
+
+```py
+@internal(TealType.none)
+    def give_funds_caller(self, pay_fee):
+        return Seq(
+            InnerTxnBuilder.Begin(),
+            If(pay_fee).Then(Seq(
+                InnerTxnBuilder.SetFields({
+                    TxnField.type_enum: TxnType.AssetTransfer,
+                    TxnField.xfer_asset: self.asset.get(),
+                    TxnField.asset_amount: self.stake.get() / self.fee_amount.get(),
+                    TxnField.asset_receiver: self.fee_holder.get(),
+                }),
+                InnerTxnBuilder.Next(),
+            )),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.AssetTransfer,
+                TxnField.xfer_asset: self.asset.get(),
+                TxnField.asset_close_to: Txn.sender(),
+            }),
+            InnerTxnBuilder.Next(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.Payment,
+                TxnField.close_remainder_to: Global.creator_address(),
+            }),
+            InnerTxnBuilder.Submit(),
+        )
+```
+
+The function creates and sends a transaction to close the contract and send the funds to the winner. If specified, the fees are subtracted from the winning amount.
+
+<!-- pop card -->
+<!-- sig to card pos -->
+<!-- card value -->
+<!-- give card to bank -->
+<!-- give card to player -->
+
+<!-- distribute req -->
+<!-- distribute act -->
+<!-- hit req -->
+<!-- hit act -->
+<!-- stand req -->
+<!-- stand act -->
 
 ## Interazione
