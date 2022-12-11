@@ -10,18 +10,20 @@ The bank's advantage in this game comes from several rules that favor it. The mo
 The advantage of being able to bet through interaction with a public smart contract on the blockchain compared to playing in classic online casinos is that the goodness of the game does not require trusting a centralized system. Security is therefore directly linked to security by the blockchain itself.
 
 <!-- We use beaker -->
+The [Beaker](https://developer.algorand.org/articles/hello-beaker/) framework was used for development. Beaker given its familiarity with python allows to develop smart contracts in a simpler way than using pure PyTeal: it provides easier interaction with contracts, better feedback when the program fails and class-style contract management
 
 ## Design
 
+For the development of the contract it was necessary to face some technical challenges: nobody has to know the deck, an actor could stop interacting, someone has to act as dealer. To handle the issue where an actor stops interacting with the contract, a maximum number of rounds has been set for players to perform their next action. If one player does not make his move before the last round expires then the other player can claim victory by forfeit. Instead, the dealer problem was solved by creating a small server that interacts with the contract. Finally, the deck of cards problem is handled as follows: the deck of cards is represented by a string of bytes in the contract state.
+<!-- continue -->
+
+The smart contract contract is designed to be developed as a finite state automaton.
+
+![DIAGRAMMA FARLOCCO](https://i0.wp.com/oneclicktutorial.altervista.org/wp-content/uploads/2017/03/download-4.png?ssl=1)
+
 The smart contract explained below was created to be connected to a gambling platform, for this reason there are fees to be paid in case of victory.
 
-<!-- problema: nessuno deve conoscere il mazzo -->
-<!-- problema: attore smette di interagire -->
-<!-- server come dealer -->
-
 ## Implementation
-
- ![DIAGRAMMA FARLOCCO](https://i0.wp.com/oneclicktutorial.altervista.org/wp-content/uploads/2017/03/download-4.png?ssl=1)
 
 ### The state
 
@@ -42,17 +44,17 @@ The smart contract explained below was created to be connected to a gambling pla
 * *bank_min_total*. The minimum total of the bank's cards based on the value of the ace.
 * *bank_max_total*. The maximum total of the bank's cards based on the value of the ace.
 * *state*. The state of the game. It can be one of the following:
-  * *init*. ...
-  * *poor*. ...
-  * *wait*. ...
-  * *distribute*. ...
+  * *init*. When the smart contract is created
+  * *poor*. When the SC's address is initialized without setting the stake
+  * *wait*. When the creator set the stake and he is waiting for the bank to join
+  * *distribute*. When the first 3 cards (2 to the player, 1 to the bank) are being distributed
   * *distribute act*. ...
-  * *player*. ...
-  * *hit act*. ...
+  * *player*. When the player can decide between: 'stand' or 'hit'
+  * *hit act*. When the bank reveals the card drawn by the player
   * *bank*. ...
   * *stand act*. ...
-  * *finish*. ...
-  * *push*. ...
+  * *finish*. When the player or the bank won the game
+  * *push*. When the game ends in a draw
 * *action_timer*. The round in which the last action was executed.
 * *winner*. The winnerá address of the game.
 * *fee_amount*. The amount of the asset that the fee holder will receive as a fee at the end of the game.
@@ -377,12 +379,54 @@ When the player or the bank wins they must receive the won assets. To call the m
 
 The function creates and sends a transaction to close the contract and send the funds to the winner. If specified, the fees are subtracted from the winning amount.
 
-<!-- pop card -->
-<!-- sig to card pos -->
-<!-- card value -->
+### Getting a card
+
+In order for the player or the bank to receive a card, it must be removed from the deck. To do this you need to provide the id of the card and which player it was drawn by.
+
+```py
+    @internal(TealType.uint64)
+    def pop_card(self, pos, pop_id):
+        i = ScratchVar(TealType.uint64)
+        j = ScratchVar(TealType.uint64)
+        return Seq(
+            For(Seq(i.store(Int(0)), j.store(Int(0))), j.load() <= pos, i.store(i.load() + Int(1))).Do(Seq(
+                If(GetByte(self.cards.get(), i.load()) == Int(0)).Then(
+                    j.store(j.load() + Int(1))
+                )
+            )),
+            i.store(i.load() - Int(1)),
+            self.cards.set(SetByte(self.cards.get(), i.load(), pop_id)),
+            self.cards_left.set(self.cards_left.get() - Int(1)),
+            self.last_card.set(i.load()),
+            
+            i.load(),
+        )
+```
+
+The function performs the update the state of the smart contract by changing the number of cards left in the deck, the drawn card and which player drew it.
+
+To obtain the value of a card it is necessary to call the `card_value` method, which returns the value of a specific card given its id.
+
+```py
+    @internal(TealType.uint64)
+    def card_value(self, id):
+        return Seq(
+            Min(id % Int(13) + Int(1), Int(10))
+        )
+```
+
+The position of a card is obtained from a signature doing the modulo for the number of cards left in the deck.
+
+```py
+    @internal(TealType.uint64)
+    def sig_to_card_pos(self, sig: abi.DynamicBytes):
+        return Seq(
+            Btoi(BytesMod(sig.get(), Extract(Itob(self.cards_left.get()), Int(7), Int(1)))),
+        )
+```
+
 <!-- give card to bank -->
 <!-- give card to player -->
-
 <!-- distribute req -->
 <!-- distribute act -->
 <!-- hit req -->
