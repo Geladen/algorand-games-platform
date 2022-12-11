@@ -19,7 +19,7 @@ For the development of the contract it was necessary to face some technical chal
 
 The smart contract contract is designed to be developed as a finite state automaton.
 
-![DIAGRAMMA FARLOCCO](https://i0.wp.com/oneclicktutorial.altervista.org/wp-content/uploads/2017/03/download-4.png?ssl=1)
+![automaton](https://github.com/Geladen/algorand-games-platform/blob/main/automaton.jpg?raw=true)
 
 The smart contract explained below was created to be connected to a gambling platform, for this reason there are fees to be paid in case of victory.
 
