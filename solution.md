@@ -3,19 +3,18 @@
 ## Overview
 
 <!-- What is blackjack -->
-Blackjack is the most widely played casino banking card game in the world, where players compete against the bank rather than each other. The goal is to get a hand total closer to 21 than the dealer without going over 21.
-At the beginning of a game of Blackjack, players and the dealer are each dealt two cards. Players' cards are normally dealt face up, while the dealer has one face down and one face up.
+Blackjack is the most widely played casino banking card game in the world, where players compete against a single entity: the bank. The goal is to get a hand total closer to 21 than the dealer, but without going over 21.
+At the beginning of a game of Blackjack, the players and the dealer are each dealt two cards. Players' cards are normally dealt face up, while the dealer has one face down and one face up.
 The bank's advantage in this game comes from several rules that favor it. The most significant of these is that the player must act before the dealer, allowing the player to bust and lose the bet before the dealer plays.
 
-The advantage of being able to bet through interaction with a public smart contract on the blockchain compared to playing in classic online casinos is that the goodness of the game does not require trusting a centralized system. Security is therefore directly linked to security by the blockchain itself.
+The advantage of being able to bet through interaction with a public smart contract on the blockchain compared to playing in classic online casinos is that the goodness of the game does not require trusting a centralized system. Security is therefore directly linked to the security of the blockchain itself.
 
 <!-- We use beaker -->
-The [Beaker](https://developer.algorand.org/articles/hello-beaker/) framework was used for development. Beaker given its familiarity with python allows to develop smart contracts in a simpler way than using pure PyTeal: it provides easier interaction with contracts, better feedback when the program fails and class-style contract management
+The [Beaker](https://developer.algorand.org/articles/hello-beaker/) framework was used for development. Beaker allows to develop smart contracts in a simpler way than using pure PyTeal: it provides easier interaction with contracts, better feedback when the program fails and class-style contract management.
 
 ## Design
 
-For the development of the contract it was necessary to face some technical challenges: nobody has to know the deck, an actor could stop interacting, someone has to act as dealer. To handle the issue where an actor stops interacting with the contract, a maximum number of rounds has been set for players to perform their next action. If one player does not make his move before the last round expires then the other player can claim victory by forfeit. Instead, the dealer problem was solved by creating a small server that interacts with the contract. Finally, the deck of cards problem is handled as follows: the deck of cards is represented by a string of bytes in the contract state.
-<!-- continue -->
+For the development of the contract it was necessary to face some technical challenges:  nobody should know the order of the cards in the deck; an actor could stop interacting; and someone has to act as dealer. To handle the issue where an actor stops interacting with the contract, a maximum number of rounds has been set for players to perform their next action. If one actor does not make his move before the last round expires, then the other actor can claim victory by forfeit. Lastly, the dealer problem was solved by creating a small server that interacts with the contract. Finally, the deck of cards problem is handled as follows: the deck of cards is represented by a string of bytes in the contract state. Each i-th byte indicates whether the card at position i in the deck has been drawn already or not. Whenever a card has to be drawn, the player submits a random nonce to the contract. The bank, then, signs the nonce and submits the ed25519 signature to the contract. Depending on the value of the signature, a different card is drawn. Note that both the player and the bank cannot control the outcome of the drawn card, as the player does not know what the result of the signature will be, and the bank cannot predict what nonce will be picked by the player.
 
 The smart contract contract is designed to be developed as a finite state automaton.
 
@@ -48,15 +47,15 @@ The smart contract explained below was created to be connected to a gambling pla
   * *poor*. When the SC's address is initialized without setting the stake
   * *wait*. When the creator set the stake and he is waiting for the bank to join
   * *distribute*. When the first 3 cards (2 to the player, 1 to the bank) are being distributed
-  * *distribute act*. ...
+  * *distribute act*. When the card to be distributed is being revealed
   * *player*. When the player can decide between: 'stand' or 'hit'
   * *hit act*. When the bank reveals the card drawn by the player
-  * *bank*. ...
-  * *stand act*. ...
+  * *bank*. When the bank has to draw a card
+  * *stand act*. When the bank reveals the card drawn by the bank itself
   * *finish*. When the player or the bank won the game
   * *push*. When the game ends in a draw
 * *action_timer*. The round in which the last action was executed.
-* *winner*. The winnerá address of the game.
+* *winner*. The address of the winner of the game.
 * *fee_amount*. The amount of the asset that the fee holder will receive as a fee at the end of the game.
 
 ### Creating a blackjack match
@@ -133,20 +132,18 @@ The function sets the fee amount to be paid by the bank, the action timer, and t
 
 ### Routing the opt-in methods
 
-Routes the opt-in methods (define_stake and join_server)
-txn: transaction that pays the stake
-fee_amount: denominator of what will be paid as fee if the joining player wins
+Routes the opt-in methods (define_stake and join_server). When calling this method, the caller must send a transaction that pays the stake, together with a number indicating what portion of the stake will be paid as fee if the joining player wins.
 
 ```py
 @opt_in
 def opt_in(self, txn: abi.AssetTransferTransaction, fee_amount: abi.Uint64):
-        return If(self.state.get() == POOR).Then(
-                self.define_stake(txn, fee_amount)
-            ).ElseIf(self.state.get() == WAIT).Then(
-                self.join_server(txn, fee_amount)
-            ).Else(
-                Err()
-            )
+    return If(self.state.get() == POOR).Then(
+            self.define_stake(txn, fee_amount)
+        ).ElseIf(self.state.get() == WAIT).Then(
+            self.join_server(txn, fee_amount)
+        ).Else(
+            Err()
+        )
 ```
 
 This function checks the state of the smart contract and based on it calls the correct internal function to do the opt-in.
@@ -158,24 +155,24 @@ To initialize the application account the creator of the smart contract has pay 
 ```py
 @external
 def init(self, txn: abi.PaymentTransaction, asset: abi.Asset):
-        return Seq(
-            Assert(
-                self.state.get() == INIT,
-                Txn.sender() == Global.creator_address(),
-                txn.get().amount() == Int(1000000),
-                asset.asset_id() == self.asset.get(),
-            ),
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.asset_receiver: Global.current_application_address(),
-                TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_amount: Int(0),
-            }),
-            InnerTxnBuilder.Submit(),
-            
-            self.state.set(POOR),
-        )
+    return Seq(
+        Assert(
+            self.state.get() == INIT,
+            Txn.sender() == Global.creator_address(),
+            txn.get().amount() == Int(1000000),
+            asset.asset_id() == self.asset.get(),
+        ),
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.asset_receiver: Global.current_application_address(),
+            TxnField.xfer_asset: self.asset.get(),
+            TxnField.asset_amount: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
+        
+        self.state.set(POOR),
+    )
 ```
 
 The function creates and submits an asset transaction, it also sets the new state.
@@ -187,10 +184,10 @@ This function sets the bank as winner in the state.
 ```py
 @internal(TealType.none)
 def win_bank(self):        
-        return Seq(
-            self.state.set(FINISH),
-            self.winner.set(self.bank.get())
-        )
+    return Seq(
+        self.state.set(FINISH),
+        self.winner.set(self.bank.get())
+    )
 ```
 
 ### The player wins
@@ -200,10 +197,10 @@ This function sets the player as winner in the state.
 ```py
 @internal(TealType.none)
 def win_player(self):
-        return Seq(
-            self.state.set(FINISH),
-            self.winner.set(Global.creator_address())
-        )
+    return Seq(
+        self.state.set(FINISH),
+        self.winner.set(Global.creator_address())
+    )
 ```
 
 ### The game ends in a draw
@@ -213,9 +210,9 @@ The function updates the application state to PUSH.
 ```py
 @internal(TealType.none)
 def push(self):
-        return Seq(
-            self.state.set(PUSH),
-        )
+    return Seq(
+        self.state.set(PUSH),
+    )
 ```
 
 ### Handle an actor leaving the match
@@ -225,27 +222,27 @@ To prevent the case in which a player realizes he has lost and stops interacting
 ```py
 @external
 def forfeit(self):
-        return Seq(
-            Assert(Or(
-                And(
-                    Or(
-                        self.state.get() == PLAYER,
-                        self.state.get() == BANK,
-                    ), 
-                    Txn.sender() == self.bank.get(),
+    return Seq(
+        Assert(Or(
+            And(
+                Or(
+                    self.state.get() == PLAYER,
+                    self.state.get() == BANK,
+                ), 
+                Txn.sender() == self.bank.get(),
+            ),
+            And(
+                Or(
+                    self.state.get() == HIT_ACT,
+                    self.state.get() == STAND_ACT,
                 ),
-                And(
-                    Or(
-                        self.state.get() == HIT_ACT,
-                        self.state.get() == STAND_ACT,
-                    ),
-                    Txn.sender() == Global.creator_address(),
-                ),
-                self.action_timer.get() + TIMEOUT <= Global.round(),
-            )),
-            self.state.set(FINISH),
-            self.winner.set(Txn.sender())
-        )
+                Txn.sender() == Global.creator_address(),
+            ),
+            self.action_timer.get() + TIMEOUT <= Global.round(),
+        )),
+        self.state.set(FINISH),
+        self.winner.set(Txn.sender())
+    )
 ```
 
 The function sets the state and the winner of the match.
@@ -257,22 +254,22 @@ The `delete` function, like the opt-in, has the aim of routing the possible meth
 ```py
 @delete
 def delete(self, asset: abi.Asset, other: abi.Account, fee_holder: abi.Account):
-        return Seq(
-            Assert(
-                asset.asset_id() == self.asset.get(),
-                If(Txn.sender() == Global.creator_address()).Then(other.address() == self.bank.get()).Else(other.address() == Global.creator_address()),
-                fee_holder.address() == self.fee_holder.get(),
-            ),
-            If(self.state.get() == FINISH).Then(
-                self.finish()
-            ).ElseIf(self.state.get() == WAIT).Then(
-                self.cancel()
-            ).ElseIf(self.state.get() == PUSH).Then(
-                self.give_funds_back()
-            ).Else(
-                Err()
-            )
+    return Seq(
+        Assert(
+            asset.asset_id() == self.asset.get(),
+            If(Txn.sender() == Global.creator_address()).Then(other.address() == self.bank.get()).Else(other.address() == Global.creator_address()),
+            fee_holder.address() == self.fee_holder.get(),
+        ),
+        If(self.state.get() == FINISH).Then(
+            self.finish()
+        ).ElseIf(self.state.get() == WAIT).Then(
+            self.cancel()
+        ).ElseIf(self.state.get() == PUSH).Then(
+            self.give_funds_back()
+        ).Else(
+            Err()
         )
+    )
 ```
 
 ### The bank may not join the game
@@ -282,13 +279,13 @@ If the bank does not enter the game, the player can decide to cancel the game an
 ```py
 @internal
 def cancel(self):
-        return Seq(
-            Assert(
-                Txn.sender() == Global.creator_address(),
-                self.state.get() == WAIT,
-            ),
-            self.give_funds_caller(Int(0)),
-        )
+    return Seq(
+        Assert(
+            Txn.sender() == Global.creator_address(),
+            self.state.get() == WAIT,
+        ),
+        self.give_funds_caller(Int(0)),
+    )
 ```
 
 The function closes the smart contract and sends the assets to the player.
@@ -300,17 +297,17 @@ The winner of the game can call the `finish` function to collect the winnings.
 ```py
 @internal
 def finish(self):
-        return Seq(
-            Assert(
-                self.winner.get() == Txn.sender()
-            ),
-            
-            If(self.winner.get() == self.bank.get()).Then(
-                self.give_funds_caller(Int(0))
-            ).Else(
-                self.give_funds_caller(Int(1))
-            )
+    return Seq(
+        Assert(
+            self.winner.get() == Txn.sender()
+        ),
+        
+        If(self.winner.get() == self.bank.get()).Then(
+            self.give_funds_caller(Int(0))
+        ).Else(
+            self.give_funds_caller(Int(1))
         )
+    )
 ```
 
 ### Getting funds back in case of draw
@@ -320,27 +317,27 @@ If the match ended in a draw, and the contract status is set to PUSH, the player
 ```py
 @internal(TealType.none)
 def give_funds_back(self):
-        return Seq(
-            InnerTxnBuilder.Begin(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_amount: self.stake.get(),
-                TxnField.asset_receiver: Global.creator_address(),
-            }),
-            InnerTxnBuilder.Next(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.AssetTransfer,
-                TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_close_to: self.bank.get(),
-            }),
-            InnerTxnBuilder.Next(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.Payment,
-                TxnField.close_remainder_to: Global.creator_address(),
-            }),
-            InnerTxnBuilder.Submit(),
-        )
+    return Seq(
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: self.asset.get(),
+            TxnField.asset_amount: self.stake.get(),
+            TxnField.asset_receiver: Global.creator_address(),
+        }),
+        InnerTxnBuilder.Next(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: self.asset.get(),
+            TxnField.asset_close_to: self.bank.get(),
+        }),
+        InnerTxnBuilder.Next(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.Payment,
+            TxnField.close_remainder_to: Global.creator_address(),
+        }),
+        InnerTxnBuilder.Submit(),
+    )
 ```
 
 The function creates and sends a transaction to close the contract and send the funds back to the player.
@@ -351,30 +348,30 @@ When the player or the bank wins they must receive the won assets. To call the m
 
 ```py
 @internal(TealType.none)
-    def give_funds_caller(self, pay_fee):
-        return Seq(
-            InnerTxnBuilder.Begin(),
-            If(pay_fee).Then(Seq(
-                InnerTxnBuilder.SetFields({
-                    TxnField.type_enum: TxnType.AssetTransfer,
-                    TxnField.xfer_asset: self.asset.get(),
-                    TxnField.asset_amount: self.stake.get() / self.fee_amount.get(),
-                    TxnField.asset_receiver: self.fee_holder.get(),
-                }),
-                InnerTxnBuilder.Next(),
-            )),
+def give_funds_caller(self, pay_fee):
+    return Seq(
+        InnerTxnBuilder.Begin(),
+        If(pay_fee).Then(Seq(
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.AssetTransfer,
                 TxnField.xfer_asset: self.asset.get(),
-                TxnField.asset_close_to: Txn.sender(),
+                TxnField.asset_amount: self.stake.get() / self.fee_amount.get(),
+                TxnField.asset_receiver: self.fee_holder.get(),
             }),
             InnerTxnBuilder.Next(),
-            InnerTxnBuilder.SetFields({
-                TxnField.type_enum: TxnType.Payment,
-                TxnField.close_remainder_to: Global.creator_address(),
-            }),
-            InnerTxnBuilder.Submit(),
-        )
+        )),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.AssetTransfer,
+            TxnField.xfer_asset: self.asset.get(),
+            TxnField.asset_close_to: Txn.sender(),
+        }),
+        InnerTxnBuilder.Next(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.Payment,
+            TxnField.close_remainder_to: Global.creator_address(),
+        }),
+        InnerTxnBuilder.Submit(),
+    )
 ```
 
 The function creates and sends a transaction to close the contract and send the funds to the winner. If specified, the fees are subtracted from the winning amount.
@@ -384,23 +381,23 @@ The function creates and sends a transaction to close the contract and send the 
 In order for the player or the bank to receive a card, it must be removed from the deck. To do this you need to provide the id of the card and which player it was drawn by.
 
 ```py
-    @internal(TealType.uint64)
-    def pop_card(self, pos, pop_id):
-        i = ScratchVar(TealType.uint64)
-        j = ScratchVar(TealType.uint64)
-        return Seq(
-            For(Seq(i.store(Int(0)), j.store(Int(0))), j.load() <= pos, i.store(i.load() + Int(1))).Do(Seq(
-                If(GetByte(self.cards.get(), i.load()) == Int(0)).Then(
-                    j.store(j.load() + Int(1))
-                )
-            )),
-            i.store(i.load() - Int(1)),
-            self.cards.set(SetByte(self.cards.get(), i.load(), pop_id)),
-            self.cards_left.set(self.cards_left.get() - Int(1)),
-            self.last_card.set(i.load()),
-            
-            i.load(),
-        )
+@internal(TealType.uint64)
+def pop_card(self, pos, pop_id):
+    i = ScratchVar(TealType.uint64)
+    j = ScratchVar(TealType.uint64)
+    return Seq(
+        For(Seq(i.store(Int(0)), j.store(Int(0))), j.load() <= pos, i.store(i.load() + Int(1))).Do(Seq(
+            If(GetByte(self.cards.get(), i.load()) == Int(0)).Then(
+                j.store(j.load() + Int(1))
+            )
+        )),
+        i.store(i.load() - Int(1)),
+        self.cards.set(SetByte(self.cards.get(), i.load(), pop_id)),
+        self.cards_left.set(self.cards_left.get() - Int(1)),
+        self.last_card.set(i.load()),
+        
+        i.load(),
+    )
 ```
 
 The function performs the update the state of the smart contract by changing the number of cards left in the deck, the drawn card and which player drew it.
@@ -408,30 +405,387 @@ The function performs the update the state of the smart contract by changing the
 To obtain the value of a card it is necessary to call the `card_value` method, which returns the value of a specific card given its id.
 
 ```py
-    @internal(TealType.uint64)
-    def card_value(self, id):
-        return Seq(
-            Min(id % Int(13) + Int(1), Int(10))
-        )
+@internal(TealType.uint64)
+def card_value(self, id):
+    return Seq(
+        Min(id % Int(13) + Int(1), Int(10))
+    )
 ```
 
 The position of a card is obtained from a signature doing the modulo for the number of cards left in the deck.
 
 ```py
-    @internal(TealType.uint64)
-    def sig_to_card_pos(self, sig: abi.DynamicBytes):
-        return Seq(
-            Btoi(BytesMod(sig.get(), Extract(Itob(self.cards_left.get()), Int(7), Int(1)))),
-        )
+@internal(TealType.uint64)
+def sig_to_card_pos(self, sig: abi.DynamicBytes):
+    return Seq(
+        Btoi(BytesMod(sig.get(), Extract(Itob(self.cards_left.get()), Int(7), Int(1)))),
+    )
 ```
 
-<!-- give card to bank -->
-<!-- give card to player -->
-<!-- distribute req -->
-<!-- distribute act -->
-<!-- hit req -->
-<!-- hit act -->
-<!-- stand req -->
-<!-- stand act -->
+### Giving a card 
 
-## Interazione
+To give a card to the player, we first compute the minimum and maximum value of the card. This is important in the case of the ace, that can be worth either 1 or 11. The value of the card is then added to the minimum/maximum total of the player. The same logic is applied to the bank.
+
+```py
+@internal(TealType.none)
+def give_card_to_player(self, pos):
+    """
+    Give a card to the player
+    pos: index of the card to be popped in the remaining card array
+    """
+    card = ScratchVar(TealType.uint64)
+    min_value = ScratchVar(TealType.uint64)
+    max_value = ScratchVar(TealType.uint64)
+    return Seq(
+        card.store(self.pop_card(pos, Int(1))),
+        self.player_cards.set(self.player_cards.get() + Int(1)),
+        min_value.store(self.card_value(card.load())),
+        max_value.store(If(min_value.load() == Int(1)).Then(Int(11)).Else(min_value.load())),
+        self.player_min_total.set(self.player_min_total.get() + min_value.load()),
+        self.player_max_total.set(self.player_max_total.get() + max_value.load()),
+    )
+```
+
+### Distribute cards
+
+For each of the three cards that are distributed at the beginning of the game, two methods are called. Firstly, the player calls the `distrubute_req` method.  For this method to be called, the player must provide a json string containing a random nonce of his choice, together with an incremental nonce that changes for every card drawn. This json string is then saved in the state of the contract.
+```py
+@external
+def distribute_req(self, request: abi.DynamicBytes):
+    """
+    Callable by the player to randomly choose a card to distribute in the initial phase.
+    request: JSON containing a (`nonce` = self.nonce), a (`app` = Global.current_application_id()) and a random `nonce_p`
+    """
+    return Seq(
+        Assert(
+            self.state.get() == DISTRIBUTE,
+            
+            Txn.sender() == Global.creator_address(),
+            JsonRef.as_uint64(request.get(), Bytes("nonce")) == self.nonce.get(),
+            JsonRef.as_uint64(request.get(), Bytes("app")) == Global.current_application_id(),
+        ),
+        
+        self.request.set(request.get()),
+        self.nonce.set(self.nonce.get() + Int(1)),
+
+        self.state.set(DISTRIBUTE_ACT),
+        self.action_timer.set(Global.round()),
+    )
+```
+
+After the first call, the contract waits for a call by the bank to the `distribute_act` method. For this emthod to be called, the bank must provide a signature of the json submitted in the previous step. According to how many cards have already been given to the player, the card is given to either the player, or the bank. After giving the card to the right actor, the contract goes back to the `DISTRIBUTE` state (if less than 3 cards have been distributed), to the `BANK` state (if the player has blackjack, in which case he can only stand), or to the `PLAYER` state, in all other cases. 
+
+```py
+@external
+def distribute_act(self, sig: abi.DynamicBytes):
+    """
+    Callable by the bank to specify what card will be distributed. The first two times 
+    the  card will be given to the player, while the third time the card will be given
+    to the bank. 
+    sig: signature of self.request by self.bank
+    """
+    return Seq(
+        OpUp(OpUpMode.OnCall).maximize_budget(Int(5000)),
+        Assert(
+            self.state.get() == DISTRIBUTE_ACT,
+            Ed25519Verify(self.request.get(), sig.get(), self.bank.get()),
+        ),
+        
+        If(self.player_cards.get() < Int(2)).Then(
+            self.give_card_to_player(self.sig_to_card_pos(sig)),
+        ).Else(
+            self.give_card_to_bank(self.sig_to_card_pos(sig)),
+        ),
+        
+        # If distribution finished and player has blackjack (player cannot hit)
+        If(And(self.bank_cards.get() == Int(1), self.player_max_total.get() == Int(21))).Then(
+            self.state.set(BANK),
+        # If distribution finished and player does not have (player can hit)
+        ).ElseIf(And(self.bank_cards.get() == Int(1), self.player_max_total.get() != Int(21))).Then(
+            self.state.set(PLAYER),
+        # If distribution has not finished (continue distributing)
+        ).Else(
+            self.state.set(DISTRIBUTE),
+        ),
+        
+        self.action_timer.set(Global.round()),
+    )
+```
+
+### Hit
+
+Hitting works in a similar manner to the distribute functions, and are split into a `req` and an `act` method call. The `hit_req` method differs from the `distribute_req` only on the fact that `distribute_req` can only be called from the `DISTRIBUTE` state, while `hit_req` can only be called from the `PLAYER` state.
+```py
+@external
+def hit_req(self, request: abi.DynamicBytes):
+    """
+    Callable by the player to randomly choose a card to draw.
+    request: JSON containing a (`nonce` = self.nonce), a (`app` = Global.current_application_id()) and a random `nonce_p`
+    """
+    return Seq(
+        Assert(
+            self.state.get() == PLAYER,
+            
+            Txn.sender() == Global.creator_address(),
+            JsonRef.as_uint64(request.get(), Bytes("nonce")) == self.nonce.get(),
+            JsonRef.as_uint64(request.get(), Bytes("app")) == Global.current_application_id(),
+        ),
+        
+        self.request.set(request.get()),
+        self.nonce.set(self.nonce.get() + Int(1)),
+
+        self.state.set(HIT_ACT),
+        self.action_timer.set(Global.round()),
+    )
+```
+
+Similarly, `hit_act` also works in a similar manner to `distribute_act`, and most of the changes are on the state transitions after the call. In fact, after drawing the card, the contract transitions to the `FINISH` state if the player has busted, to the `BANK` state if the player has reached 21, or to the `PLAYER` state otherwise.
+
+```py
+@external
+def hit_act(self, sig: abi.DynamicBytes):
+    """
+    Callable by the bank to specify what card will be drawn by the player.
+    sig: signature of self.request by self.bank
+    """
+    return Seq(
+        OpUp(OpUpMode.OnCall).maximize_budget(Int(5000)),
+        Assert(
+            self.state.get() == HIT_ACT,
+            Ed25519Verify(self.request.get(), sig.get(), self.bank.get()),
+        ),
+        
+        self.give_card_to_player(self.sig_to_card_pos(sig)),
+        
+        # If player busted and does not have aces worth 11 (bank wins)
+        If(And(self.player_max_total.get() > Int(21), self.player_max_total.get() == self.player_min_total.get())).Then(
+            self.state.set(FINISH),
+            self.winner.set(self.bank.get()),
+        # If player busted BUT has at least one ace worth 11 (make ace worth one)
+        ).ElseIf(And(self.player_max_total.get() > Int(21), self.player_max_total.get() != self.player_min_total.get())).Then(
+            self.state.set(PLAYER),
+            self.player_max_total.set(self.player_max_total.get() - Int(10)),
+        # If a player reached 21 (cannot hit again)
+        ).ElseIf(self.player_max_total.get() == Int(21)).Then(
+            self.state.set(BANK),
+        # If a player is below 21 (can hit again)
+        ).Else(
+            self.state.set(PLAYER),
+        ),
+        
+        self.action_timer.set(Global.round()),
+    )
+```
+
+### Stand
+
+Again, similarly to hitting, standing also works in a similar manner to distributing. The only differences are that standing is possible only when the contract is in state `PLAYER` or `BANK`,  that the drawn card is given to the bank, and on the state transitions after the card has been drawn.  
+```py
+@external
+def stand_req(self, request: abi.DynamicBytes):
+    """
+    Callable by the player to randomly choose a card to let the bank draw.
+    request: JSON containing a (`nonce` = self.nonce), a (`app` = Global.current_application_id()) and a random `nonce_p`
+    """
+    return Seq(
+        Assert(
+            Or(
+                self.state.get() == PLAYER,
+                self.state.get() == BANK,
+            ),
+            
+            Txn.sender() == Global.creator_address(),
+            JsonRef.as_uint64(request.get(), Bytes("nonce")) == self.nonce.get(),
+            JsonRef.as_uint64(request.get(), Bytes("app")) == Global.current_application_id(),
+        ),
+        
+        self.request.set(request.get()),
+        self.nonce.set(self.nonce.get() + Int(1)),
+        
+        self.state.set(STAND_ACT),
+        self.action_timer.set(Global.round()),
+    )
+```
+
+In fact, at the end of the execution, the contract transitions into state `BANK` if the bank has not yet reached a value of 17, or if the bank has busted or a value of 17 has been reached, the contract transitions into state `FINISH` with the `winner` variable set to the winning actor. Lastly, if the game ends in a draw, we transition into state `PUSH`.
+
+```py
+@external
+def stand_act(self, sig: abi.DynamicBytes):
+    """
+    Callable by the bank to specify what card will be drawn by the bank.
+    sig: signature of self.request by self.bank
+    """
+    return Seq(
+        OpUp(OpUpMode.OnCall).maximize_budget(Int(5000)),
+        Assert(
+            self.state.get() == STAND_ACT,
+            Ed25519Verify(self.request.get(), sig.get(), self.bank.get()),
+        ),
+        
+        self.give_card_to_bank(self.sig_to_card_pos(sig)),
+        
+        # If bank busted and does not have aces worth 11 (player wins)
+        If(And(self.bank_max_total.get() > Int(21), self.bank_max_total.get() == self.bank_min_total.get())).Then(Seq(
+            self.state.set(FINISH),
+            self.winner.set(Global.creator_address()),
+        # If bank busted BUT has at least one ace worth 11 (make ace worth one)
+        )).ElseIf(And(self.bank_max_total.get() > Int(21), self.bank_max_total.get() != self.bank_min_total.get())).Then(
+            self.state.set(BANK),
+            self.bank_max_total.set(self.bank_max_total.get() - Int(10))
+        # If bank reached a hand worth at least 17 (game is over)
+        ).ElseIf(self.bank_max_total.get() >= Int(17)).Then(
+            # If bank's total is higher than player (bank wins)
+            If(self.bank_max_total.get() > self.player_max_total.get()).Then(
+                self.win_bank(),
+            # If bank's total is higher than player (player wins)
+            ).ElseIf(self.bank_max_total.get() < self.player_max_total.get()).Then(
+                self.win_player(),
+            # If bank's total is the same as player
+            ).Else(
+                # If player has black jack (player wins)
+                If(And(self.player_max_total.get() == Int(21), self.player_cards.get() == Int(2), self.bank_cards.get() != Int(2))).Then(
+                    self.win_player(),
+                # If bank has black jack (bank wins)
+                ).ElseIf(And(self.player_max_total.get() == Int(21), self.player_cards.get() != Int(2), self.bank_cards.get() == Int(2))).Then(
+                    self.win_bank(),
+                # If neither has black jack (push/draw)
+                ).Else(
+                    self.push(),
+                )
+            )
+        # If bank has not reached 17 yet (continue drawing cards)
+        ).Else(
+            self.state.set(BANK),
+        ),
+        
+        self.action_timer.set(Global.round()),
+    )
+```
+
+## Interaction
+
+The interaction between player (or bank) and smart contract is modelled as a loop that checks what state the contract is in, and, if needed, asks if the player wants to hit or stand. 
+
+```py
+def interact_blackjack(app_id=0):
+    appclient_platform = ApplicationClient(client=client, app=Blackjack(), app_id=platform_id, signer=player.acc)
+    appclient_blackjack = ApplicationClient(client=client, app=Blackjack(), app_id=app_id, signer=player.acc)
+    revealed = False
+    
+    while True:
+        round = client.status()['last-round']
+        sp = client.suggested_params()
+        puntazzi = try_get_local("puntazzi", appclient_platform.app_id)
+        creator = try_get_creator(appclient_blackjack.app_id)
+        winner, action_timer, global_state, nonce, bank, last_card, cards = try_get_global(["winner", "action_timer", "state", "nonce", "bank", "last_card", "cards"], appclient_blackjack.app_id)
+        bank = algosdk.encoding.encode_address(codecs.decode(bank.encode(), "hex")) if bank is not None else None
+        if  revealed and (global_state == state_player or global_state == state_bank or global_state == state_distribute or global_state == state_finish or global_state == state_push):
+            revealed = False
+            print(f"Your hand: {', '.join(map(get_card_value, get_cards(cards, 1)))}")
+            print(f"Bank hand: {', '.join(map(get_card_value, get_cards(cards, 2)))}")
+            
+        if appclient_blackjack.app_id == 0:
+            print("Creating blackjack game...", end=" ", flush=True)
+            bank = server_blackjack.create_account(player.pk)
+            app_id, _, _ = trysend(lambda: appclient_blackjack.create(player.pk, asset=skull_id, fee_holder=fee_holder.pk, bank=bank))
+            print("Done!")
+        elif global_state == state_init:
+            print("Initializing game...", end=" ", flush=True)
+            trysend(lambda: appclient_blackjack.call(Blackjack.init, player.pk, txn=TransactionWithSigner(algosdk.future.transaction.PaymentTxn(player.pk, sp, appclient_blackjack.app_addr, 1000000), signer=player.acc), asset=skull_id))
+            print("Done!")
+        elif global_state == state_poor:
+            stake = ask_number("How much do you want to stake?", range=[min_stake, None])
+            fee_amount = get_fee(puntazzi)
+            print("Sending stake...", end=" ", flush=True)
+            trysend(lambda: finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.new_game, player.pk, game="blackjack", app=appclient_blackjack.app_id, 
+                txn=opt_in_nosend(appclient_blackjack, player.pk, fee_amount=fee_amount, 
+                txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(player.pk, sp, appclient_blackjack.app_addr, stake, skull_id), signer=player.acc)))))
+            print("Done!")
+        elif global_state == state_wait and player.pk == creator:
+            print("Waiting for players...")
+        elif not is_opted(player.pk, appclient_blackjack.app_id):
+            print("You are not playing this game.")
+            return 
+        elif global_state == state_player:
+            choice = ask_string("Do you want to hit or stand? (hit/stand)", lambda x: x=='hit' or x=='stand')
+            nonce_p = random.randint(0, 2**64-1)
+            fun = Blackjack.stand_req if choice == 'stand' else Blackjack.hit_req
+            print("Sending request...", end=" ", flush=True)
+            trysend(lambda: appclient_blackjack.call(fun, player.pk, request=json.dumps({"nonce": nonce, "nonce_p": nonce_p, "app": appclient_blackjack.app_id}).encode()))
+            print("Done!")
+            revealed = True
+        elif global_state == state_hit_act or global_state == state_stand_act or global_state == state_distribute_act:
+            print("Waiting for dealer to serve...")
+            if action_timer + action_timeout <= round:
+                print("Player inactive, reporting...", end=" ", flush=True)
+                trysend(lambda: appclient_blackjack.call(Blackjack.forfeit, player.pk))
+                print("Done!")
+            else:
+                sleep(3)
+            sleep(3)
+        elif global_state == state_bank or global_state == state_distribute:
+            nonce_p = random.randint(0, 2**64-1)
+            print("Choosing card for bank...", end=" ", flush=True)
+            fun = Blackjack.stand_req if global_state == state_bank else Blackjack.distribute_req
+            trysend(lambda: appclient_blackjack.call(fun, player.pk, request=json.dumps({"nonce": nonce, "nonce_p": nonce_p, "app": appclient_blackjack.app_id}).encode()))
+            print("Done!")
+            revealed = True
+        elif global_state == state_finish and winner == codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
+            print("You won the game!")
+            print("Registering win...", end=" ", flush=True)
+            trysend(lambda: appclient_platform.call(GamePlatform.win_game, player.pk, challenger=bank, app=appclient_blackjack.app_id))
+            print("Getting money...", end=" ", flush=True)
+            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=bank, fee_holder=fee_holder.pk))
+            print("Done!")
+            return
+        elif global_state == state_finish and winner != codecs.encode(algosdk.encoding.decode_address(player.pk), 'hex').decode():
+            print("You lost :(")
+            return
+        elif global_state == state_push:
+            print("Draw.")
+            print("Getting money...", end=" ", flush=True)
+            trysend(lambda: appclient_blackjack.delete(player.pk, asset=skull_id, other=bank, fee_holder=fee_holder.pk))
+            print("Done!")
+            return
+        else:
+            print(appclient_blackjack.get_application_state())
+            print(appclient_blackjack.get_account_state())
+            print("NO ACTION")
+            sleep(3)
+```
+
+The server that controls the bank actor works in a similar fashion but without the need of human interaction.
+
+```py
+def interact_blackjack(app_id, player):
+    bank = load_account(player)
+    
+    appclient_platform = ApplicationClient(client=client, app=Blackjack(), app_id=platform_id, signer=bank.acc)
+    appclient_blackjack = ApplicationClient(client=client, app=Blackjack(), app_id=app_id, signer=bank.acc)
+    
+    appclient_blackjack.build()
+    
+    sp = client.suggested_params()
+    creator = try_get_creator(appclient_blackjack.app_id)
+    stake, global_state, request, winner = try_get_global(["stake", "state", "request", "winner"], appclient_blackjack.app_id)
+        
+    if global_state == state_wait:
+        appclient_platform.call(GamePlatform.buy, bank.pk, asset=skull_id, txn=TransactionWithSigner(
+            algosdk.future.transaction.PaymentTxn(bank.pk, sp, appclient_platform.app_addr, stake), 
+            bank.acc
+        ))
+        puntazzi = try_get_local("puntazzi", appclient_platform.app_id)
+        fee_amount = get_fee(puntazzi)
+        trysend(lambda: finalize(appclient_platform, call_nosend(appclient_platform, GamePlatform.join_game, bank.pk, challenger=creator, app=appclient_blackjack.app_id,
+            txn=opt_in_nosend(appclient_blackjack, bank.pk, fee_amount=fee_amount,
+            txn=TransactionWithSigner(algosdk.future.transaction.AssetTransferTxn(bank.pk, sp, appclient_blackjack.app_addr, stake, skull_id), signer=bank.acc)))))
+    elif global_state == state_hit_act or global_state == state_stand_act or global_state == state_distribute_act:
+        funs = {state_hit_act: Blackjack.hit_act, state_stand_act: Blackjack.stand_act, state_distribute_act: Blackjack.distribute_act}
+        fun = funs[global_state]
+        appclient_blackjack.call(fun, bank.pk, sig=algosdk.logic.teal_sign_from_program(bank.sk, request.encode(), appclient_blackjack.approval_binary))
+    elif global_state == state_finish and winner == codecs.encode(algosdk.encoding.decode_address(bank.pk), 'hex').decode():
+        trysend(lambda: appclient_platform.call(GamePlatform.win_game, bank.pk, challenger=creator, app=appclient_blackjack.app_id))
+        trysend(lambda: appclient_blackjack.delete(bank.pk, asset=skull_id, other=creator, fee_holder=fee_holder.pk))
+
+```
